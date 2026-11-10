@@ -1,0 +1,8 @@
+{
+  "master_active": false,
+  "use_system_proxy": true,
+  "use_tun": false,
+  "tun_stack": "mixed",
+  "outbound_mode": "rule",
+  "secret": "2df0446b-c349-4169-819a-226115a8fc66"
+}

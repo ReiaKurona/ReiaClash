@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>ReiaClash 商業級控制中心</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #141c2e;
+      --card-inner: #1c263d;
+      --border: #223049;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --selected-bg: #1e3a8a;
+      --selected-border: #60a5fa;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .container { width: 100%; max-width: 1020px; display: flex; flex-direction: column; gap: 16px; }
+
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 12px 20px;
+    }
+    .logo-area { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
+    .status-dot.online { background: var(--success); box-shadow: 0 0 10px var(--success); }
+
+    .nav-tabs { display: flex; gap: 6px; }
+    .nav-btn {
+      background: transparent; border: none; color: var(--text-muted); font-size: 13px; font-weight: 700;
+      padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: 0.2s;
+    }
+    .nav-btn.active { color: white; background: var(--primary); }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; }
+
+    .hero-card {
+      display: flex; justify-content: space-between; align-items: center;
+      background: linear-gradient(135deg, #182239 0%, #0f172a 100%);
+    }
+    .hero-btn {
+      width: 76px; height: 76px; border-radius: 50%; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.25s ease;
+    }
+    .hero-btn.running { background: var(--primary); color: white; box-shadow: 0 0 24px rgba(59, 130, 246, 0.6); }
+    .hero-btn.stopped { background: #334155; color: #94a3b8; }
+    .hero-btn svg { width: 34px; height: 34px; fill: currentColor; }
+
+    .segmented {
+      display: flex; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 8px; gap: 4px; margin-top: 8px;
+    }
+    .segmented button {
+      flex: 1; padding: 7px; border: none; background: transparent; color: var(--text-muted);
+      font-weight: 600; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .segmented button.active { background: var(--primary); color: white; }
+
+    .switch-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; }
+    .switch-row:not(:last-child) { border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .switch { position: relative; width: 44px; height: 24px; display: inline-block; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background: #334155; border-radius: 24px; transition: 0.25s;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+      background: white; border-radius: 50%; transition: 0.25s;
+    }
+    input:checked + .slider { background: var(--primary); }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 10px; }
+    .node-card {
+      background: var(--card-inner); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px; cursor: pointer; transition: 0.15s; display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .node-card:hover { border-color: var(--primary); }
+    .node-card.selected { background: var(--selected-bg); border-color: var(--selected-border); }
+    .node-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+    .node-delay { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.3); }
+
+    /* 實時日誌終端風格 */
+    #log-console {
+      background: #060911; border: 1px solid #1a2336; border-radius: 10px; padding: 14px;
+      height: 420px; overflow-y: auto; font-family: "Consolas", monospace; font-size: 12px;
+      line-height: 1.5; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px;
+    }
+    .log-line { display: flex; gap: 8px; word-break: break-all; }
+    .log-info { color: #60a5fa; }
+    .log-warning { color: #f59e0b; }
+    .log-error { color: #ef4444; }
+
+    .badge { padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #334155; }
+    .badge.online { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+    button.btn {
+      padding: 8px 14px; border: none; border-radius: 8px; background: var(--primary);
+      color: white; font-weight: 600; cursor: pointer; font-size: 12px;
+    }
+    button.btn.danger { background: var(--danger); }
+    input[type="text"], input[type="number"], select {
+      background: rgba(0,0,0,0.3); color: white; border: 1px solid var(--border);
+      padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 頂部導航 -->
+  <div class="top-bar">
+    <div class="logo-area">
+      <div id="conn-dot" class="status-dot"></div>
+      <span>ReiaClash</span>
+      <span id="agent-ver" class="badge">未連接</span>
+    </div>
+    <div class="nav-tabs">
+      <button id="tab-btn-dash" class="nav-btn active" onclick="switchTab('dash')">📊 儀表盤</button>
+      <button id="tab-btn-nodes" class="nav-btn" onclick="switchTab('nodes')">🌐 節點選擇</button>
+      <button id="tab-btn-settings" class="nav-btn" onclick="switchTab('settings')">⚙️ 偏好與網絡</button>
+      <button id="tab-btn-ota" class="nav-btn" onclick="switchTab('ota')">⚡ 內核維護</button>
+      <button id="tab-btn-sub" class="nav-btn" onclick="switchTab('sub')">📥 訂閱配置</button>
+      <button id="tab-btn-logs" class="nav-btn" onclick="switchTab('logs')">📝 內核日誌</button>
+    </div>
+  </div>
+
+  <!-- ================= TAB 1: 儀表盤 ================= -->
+  <div id="tab-dash" style="display: flex; flex-direction: column; gap: 14px;">
+    <div class="card hero-card">
+      <div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <h2 style="font-size: 20px;">系統流量代理</h2>
+          <span id="hero-status-badge" class="badge">檢測中...</span>
+        </div>
+        <p id="hero-status-desc" style="color:var(--text-muted); font-size:13px; margin-top:6px;">
+          零停機熱重載控制：按開關切換網絡接管，內核無需殺進程
+        </p>
+        <div style="margin-top: 14px; display:flex; gap:16px; font-size:12px; color:var(--text-muted);">
+          <span>物理狀態: <strong id="real-interception-text" style="color:white;">-</strong></span>
+          <span>局域網共享: <strong id="real-lan-text" style="color:white;">-</strong></span>
+          <span>出口 IP: <strong id="ip-val" style="color:white;">-</strong></span>
+        </div>
+      </div>
+      <button id="master-btn" class="hero-btn stopped" onclick="toggleMaster()">
+        <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="icon-pause" style="display:none;" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+      </button>
+    </div>
+
+    <div class="grid-3">
+      <div class="card">
+        <span style="font-size: 12px; color: var(--text-muted);">實時速率 (下行 / 上行)</span>
+        <div id="speed-down" style="font-size: 22px; font-weight: 800; margin-top: 6px;">0 B/s ↓</div>
+        <div id="speed-up" style="font-size: 13px; color: var(--text-muted); margin-top: 2px;">0 B/s ↑</div>
+      </div>
+
+      <div class="card">
+        <span style="font-size: 12px; color: var(--text-muted);">出站模式 (原生熱切換)</span>
+        <div class="segmented">
+          <button id="btn-mode-rule" onclick="setOutboundMode('rule')">規則</button>
+          <button id="btn-mode-global" onclick="setOutboundMode('global')">全局</button>
+          <button id="btn-mode-direct" onclick="setOutboundMode('direct')">直連</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <span style="font-size: 12px; color: var(--text-muted);">內核內存 (WebSocket)</span>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:6px;">
+          <span id="mem-val" style="font-size: 22px; font-weight: 800;">-</span>
+          <span style="font-size: 12px; color: var(--text-muted);">MB</span>
+        </div>
+        <span style="font-size: 11px; color: var(--text-muted);">Mihomo 實時匯報</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TAB 2: 節點選擇 ================= -->
+  <div id="tab-nodes" style="display: none; flex-direction:column; gap:14px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:13px; color:var(--text-muted);">切換節點自動強制掐斷舊連接，流量無縫切換</span>
+      <button class="btn" onclick="loadProxyGroups()">🔄 刷新列表</button>
+    </div>
+    <div id="groups-container"></div>
+  </div>
+
+  <!-- ================= TAB 3: 偏好與網絡 (含區域網路連線與開機自啟) ================= -->
+  <div id="tab-settings" style="display: none; flex-direction:column; gap:14px;">
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:8px;">網絡接管偏好（總開關開啟時按此執行）</h3>
+      
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">Windows 系統代理</div>
+          <div style="font-size:12px; color:var(--text-muted);">將本機流量導向 127.0.0.1:7890</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-sys-proxy" onchange="updatePrefSettings()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">虛擬網卡 (TUN 模式)</div>
+          <div style="font-size:12px; color:var(--text-muted);">需管理員權限，接管所有無代理軟件與遊戲流量</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-tun" onchange="updatePrefSettings()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">TUN 協議棧</div>
+          <div style="font-size:12px; color:var(--text-muted);">支持 mixed / gvisor / system / mips</div>
+        </div>
+        <select id="pref-tun-stack" onchange="updatePrefSettings()">
+          <option value="mixed">mixed (推薦)</option>
+          <option value="gvisor">gvisor</option>
+          <option value="system">system</option>
+          <option value="mips">mips</option>
+        </select>
+      </div>
+
+      <!-- 新增：區域網路連線開關 -->
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">區域網路連線 🖧 (Allow LAN)</div>
+          <div style="font-size:12px; color:var(--text-muted);">允許局域網內其他設備連接本機 7890 端口共享代理</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-allow-lan" onchange="updatePrefSettings()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <!-- 找回：開機自啟動 -->
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">開機靜默自啟動</div>
+          <div style="font-size:12px; color:var(--text-muted);">開機自動拉起 ReiaClash 並入駐右下角托盤</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-autostart" onchange="toggleAutoStart(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:12px;">客戶端退出</h3>
+      <button class="btn danger" onclick="exitClient()">❌ 退出 ReiaClash 並完全復原網絡設置</button>
+    </div>
+  </div>
+
+  <!-- ================= TAB 4: 內核維護 ================= -->
+  <div id="tab-ota" style="display: none; flex-direction:column; gap:14px;">
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:10px;">內核版本與架構檢測</h3>
+      <div style="display:flex; gap:20px; font-size:13px;">
+        <span>運行版本: <strong id="core-ver-text" style="color:var(--primary);">-</strong></span>
+        <span>匹配架構: <strong id="detected-target" style="color:var(--success);">-</strong></span>
+        <span>最新發布: <strong id="latest-tag-text" style="color:var(--warning);">未檢測</strong></span>
+      </div>
+      <button class="btn" style="margin-top:12px;" onclick="checkGitHubRelease()">🔍 檢查 GitHub 適配更新</button>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:8px;">自動靜默升級計劃</h3>
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">開啟後台自動靜默下載</div>
+          <div style="font-size:12px; color:var(--text-muted);">巡檢到新版自動下載到 update.pack，在下次冷啟動或退出時無感替換</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-auto-ota" onchange="updatePrefSettings()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">巡檢間隔 (小時)</div>
+          <div style="font-size:12px; color:var(--text-muted);">自定義後台定時巡檢的時間間隔</div>
+        </div>
+        <input type="number" id="pref-ota-hours" min="1" max="168" style="width:80px;" onchange="updatePrefSettings()">
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:8px;">手動在線升級</h3>
+      <div style="display:flex; gap:10px;">
+        <button class="btn" onclick="startManualUpgrade()">🚀 立即熱升級當前內核</button>
+        <button class="btn" style="background:#475569;" onclick="startSilentDownload()">🤫 僅靜默打包到 update.pack</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TAB 5: 訂閱配置 ================= -->
+  <div id="tab-sub" style="display: none; flex-direction:column; gap:14px;">
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:10px;">推送訂閱鏈接 (熱重載生效，不殺進程)</h3>
+      <div style="display:flex; gap:10px;">
+        <input type="text" id="sub-url-input" placeholder="輸入明文或 Base64 訂閱鏈接" style="flex:1;">
+        <button class="btn" onclick="pushSubUrl()">下載並熱加載</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TAB 6: 實時日誌 (找回並開放) ================= -->
+  <div id="tab-logs" style="display: none; flex-direction:column; gap:10px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:13px; color:var(--text-muted);">Mihomo 內核實時日誌 (WebSocket: ws://127.0.0.1:9090/logs)</span>
+      <button class="btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('log-console').innerHTML=''">清空日誌</button>
+    </div>
+    <div id="log-console"></div>
+  </div>
+</div>
+
+<script>
+  const AGENT_BASE = 'http://127.0.0.1:25500';
+  let mihomoController = null;
+  let trafficWs = null, memoryWs = null, logsWs = null;
+  let latestDownloadUrl = '';
+
+  async function init() {
+    try {
+      const res = await fetch(`${AGENT_BASE}/api/handshake`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Request-Private-Network': 'true' },
+        body: JSON.stringify({ panel_origin: window.location.href })
+      });
+      const data = await res.json();
+      document.getElementById('conn-dot').className = 'status-dot online';
+      document.getElementById('agent-ver').className = 'badge online';
+      document.getElementById('agent-ver').textContent = `Agent v${data.agent_version}`;
+      mihomoController = data.mihomo_controller;
+
+      connectTraffic();
+      connectMemory();
+      connectLogs();
+      await syncRealStatus();
+      syncAutoStart();
+      fetchIP();
+      fetchCoreVersion();
+    } catch (e) {
+      document.getElementById('agent-ver').textContent = '未連接';
+    }
+  }
+
+  // 同步物理真實狀態
+  async function syncRealStatus() {
+    try {
+      const res = await fetch(`${AGENT_BASE}/api/agent/real-status`);
+      const d = await res.json();
+
+      const masterBtn = document.getElementById('master-btn');
+      const badge = document.getElementById('hero-status-badge');
+      const desc = document.getElementById('hero-status-desc');
+      const playIcon = document.getElementById('icon-play');
+      const pauseIcon = document.getElementById('icon-pause');
+      const realText = document.getElementById('real-interception-text');
+      const lanText = document.getElementById('real-lan-text');
+
+      let activeModes = [];
+      if (d.real_system_proxy) activeModes.push('系統代理(7890)');
+      if (d.real_tun) activeModes.push(`TUN(${d.settings.tun_stack})`);
+
+      lanText.textContent = d.settings.allow_lan ? '已開啟 (0.0.0.0:7890)' : '已關閉';
+
+      if (d.is_actually_intercepting) {
+        masterBtn.className = 'hero-btn running';
+        badge.className = 'badge online';
+        badge.textContent = '代理生效中';
+        realText.textContent = activeModes.join(' + ');
+        desc.textContent = `流量已被接管 [ ${activeModes.join(' + ')} ]，點擊按鈕暫停代理`;
+        playIcon.style.display = 'none';
+        pauseIcon.style.display = 'block';
+      } else {
+        masterBtn.className = 'hero-btn stopped';
+        badge.className = 'badge';
+        badge.textContent = '代理已暫停';
+        realText.textContent = '直連中 (無接管)';
+        desc.textContent = `當前網絡直連 | 預設記憶: [ ${d.settings.use_system_proxy ? '系統代理 ' : ''}${d.settings.use_tun ? 'TUN' : ''} ]，點擊一鍵啟動`;
+        playIcon.style.display = 'block';
+        pauseIcon.style.display = 'none';
+      }
+
+      ['rule', 'global', 'direct'].forEach(m => {
+        document.getElementById(`btn-mode-${m}`).className = (d.settings.outbound_mode === m) ? 'active' : '';
+      });
+
+      document.getElementById('pref-sys-proxy').checked = d.settings.use_system_proxy;
+      document.getElementById('pref-tun').checked = d.settings.use_tun;
+      document.getElementById('pref-tun-stack').value = d.settings.tun_stack;
+      document.getElementById('pref-allow-lan').checked = d.settings.allow_lan;
+      document.getElementById('pref-auto-ota').checked = d.settings.auto_update_enabled;
+      document.getElementById('pref-ota-hours').value = d.settings.update_interval_hours;
+    } catch (e) {}
+  }
+
+  async function syncAutoStart() {
+    try {
+      const res = await fetch(`${AGENT_BASE}/api/system/status`);
+      const d = await res.json();
+      document.getElementById('pref-autostart').checked = d.autostart_enabled;
+    } catch (e) {}
+  }
+
+  async function toggleAutoStart(enable) {
+    await fetch(`${AGENT_BASE}/api/system/autostart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enable })
+    });
+  }
+
+  async function toggleMaster() {
+    const res = await fetch(`${AGENT_BASE}/api/agent/real-status`);
+    const d = await res.json();
+    const target = !d.is_actually_intercepting;
+
+    await fetch(`${AGENT_BASE}/api/agent/master`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enable: target })
+    });
+    setTimeout(syncRealStatus, 400);
+    setTimeout(fetchIP, 1500);
+  }
+
+  async function updatePrefSettings() {
+    const sp = document.getElementById('pref-sys-proxy').checked;
+    const tun = document.getElementById('pref-tun').checked;
+    const stack = document.getElementById('pref-tun-stack').value;
+    const lan = document.getElementById('pref-allow-lan').checked;
+    const autoOta = document.getElementById('pref-auto-ota').checked;
+    const otaHrs = parseInt(document.getElementById('pref-ota-hours').value) || 24;
+
+    await fetch(`${AGENT_BASE}/api/agent/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        use_system_proxy: sp,
+        use_tun: tun,
+        tun_stack: stack,
+        allow_lan: lan,
+        auto_update_enabled: autoOta,
+        update_interval_hours: otaHrs
+      })
+    });
+    syncRealStatus();
+  }
+
+  async function setOutboundMode(mode) {
+    await fetch(`${AGENT_BASE}/api/agent/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outbound_mode: mode })
+    });
+    syncRealStatus();
+    if (document.getElementById('tab-nodes').style.display === 'flex') {
+      loadProxyGroups();
+    }
+  }
+
+  // 節點選擇與整組測速
+  async function loadProxyGroups() {
+    const container = document.getElementById('groups-container');
+    container.innerHTML = '<div style="color:var(--text-muted); padding:30px; text-align:center;">正在讀取策略組...</div>';
+
+    try {
+      const res = await fetch(`${AGENT_BASE}/api/core/proxies`);
+      const data = await res.json();
+      renderGroups(data.proxies);
+    } catch (e) {
+      container.innerHTML = '<div style="color:var(--danger); padding:30px; text-align:center;">獲取節點列表失敗</div>';
+    }
+  }
+
+  function renderGroups(proxies) {
+    const container = document.getElementById('groups-container');
+    container.innerHTML = '';
+
+    const groupTypes = ['Selector', 'Fallback', 'URLTest', 'LoadBalance'];
+    let groupNames = Object.keys(proxies).filter(k => groupTypes.includes(proxies[k].type));
+
+    const activeBtn = document.querySelector('.segmented button.active');
+    const currentMode = activeBtn ? activeBtn.id.replace('btn-mode-', '') : 'rule';
+
+    if (currentMode === 'direct') {
+      container.innerHTML = '<div class="card" style="text-align:center; padding:40px; color:var(--text-muted);"><h3>當前為直連模式</h3><p style="margin-top:6px; font-size:13px;">流量直接出站，不使用任何代理節點</p></div>';
+      return;
+    }
+
+    if (currentMode === 'rule') {
+      groupNames = groupNames.filter(n => n.toUpperCase() !== 'GLOBAL');
+    } else if (currentMode === 'global') {
+      groupNames.sort((a, b) => a.toUpperCase() === 'GLOBAL' ? -1 : 1);
+    }
+
+    groupNames.forEach(gName => {
+      const g = proxies[gName];
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.marginBottom = '14px';
+
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <strong style="font-size:15px;">${g.name}</strong>
+            <span class="badge" style="margin-left:6px;">${g.type}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:12px; color:var(--primary); font-weight:700;">當前選中: ${g.now}</span>
+            <button class="btn" style="padding:4px 8px; font-size:11px;" onclick="testGroupDelay('${g.name}')">⚡ 快速測速</button>
+          </div>
+        </div>
+      `;
+
+      const grid = document.createElement('div');
+      grid.className = 'node-grid';
+
+      g.all.forEach(nName => {
+        const node = proxies[nName] || { type: 'Node' };
+        const isSel = (g.now === nName);
+
+        const nodeCard = document.createElement('div');
+        nodeCard.className = `node-card ${isSel ? 'selected' : ''}`;
+
+        let dText = '- ms';
+        let dColor = 'var(--text-muted)';
+        if (node.history && node.history.length > 0) {
+          const d = node.history[node.history.length - 1].delay;
+          if (d > 0) {
+            dText = `${d} ms`;
+            dColor = d < 350 ? '#10b981' : '#f59e0b';
+          }
+        }
+
+        nodeCard.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="node-name" title="${nName}">${nName}</span>
+            <span id="delay-${g.name}-${nName}" class="node-delay" style="color:${dColor}">${dText}</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:8px;">${node.type}</div>
+        `;
+
+        nodeCard.onclick = async () => {
+          await selectNode(g.name, nName);
+        };
+
+        grid.appendChild(nodeCard);
+      });
+
+      card.appendChild(grid);
+      container.appendChild(card);
+    });
+  }
+
+  async function selectNode(groupName, nodeName) {
+    const res = await fetch(`${AGENT_BASE}/api/core/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group: groupName, node: nodeName })
+    });
+    const d = await res.json();
+    if (!d.success) alert(d.message);
+    loadProxyGroups();
+  }
+
+  async function testGroupDelay(groupName) {
+    const res = await fetch(`${AGENT_BASE}/api/core/group-delay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group: groupName })
+    });
+    const delayMap = await res.json();
+    for (const [nodeName, delay] of Object.entries(delayMap)) {
+      const el = document.getElementById(`delay-${groupName}-${nodeName}`);
+      if (el) {
+        el.textContent = `${delay} ms`;
+        el.style.color = delay < 350 ? '#10b981' : '#f59e0b';
+      }
+    }
+  }
+
+  // 日誌 WebSocket
+  function connectLogs() {
+    if (!mihomoController || logsWs) return;
+    try {
+      logsWs = new WebSocket(`ws://127.0.0.1:9090/logs?token=${encodeURIComponent(mihomoController.secret)}&level=info`);
+      const box = document.getElementById('log-console');
+      logsWs.onmessage = (e) => {
+        const log = JSON.parse(e.data);
+        const row = document.createElement('div');
+        row.className = 'log-line';
+        row.innerHTML = `<span class="log-${log.type}">[${log.type.toUpperCase()}]</span> <span>${log.payload}</span>`;
+        box.appendChild(row);
+        if (box.children.length > 200) box.removeChild(box.children[0]);
+        box.scrollTop = box.scrollHeight;
+      };
+      logsWs.onclose = () => { logsWs = null; };
+    } catch (e) {}
+  }
+
+  // 升級檢測
+  async function checkGitHubRelease() {
+    document.getElementById('latest-tag-text').textContent = '檢測中...';
+    try {
+      const res = await fetch(`${AGENT_BASE}/api/agent/check-update`);
+      const d = await res.json();
+      if (d.success) {
+        document.getElementById('latest-tag-text').textContent = d.tag;
+        document.getElementById('detected-target').textContent = `${d.os}-${d.arch}`;
+        latestDownloadUrl = d.download_url;
+      }
+    } catch (e) {}
+  }
+
+  async function startManualUpgrade() {
+    alert('已開始自動下載適配架構的內核，完成後熱重啟...');
+    const res = await fetch(`${AGENT_BASE}/api/agent/upgrade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ download_url: latestDownloadUrl, is_silent: false })
+    });
+    const d = await res.json();
+    alert(d.message);
+  }
+
+  async function startSilentDownload() {
+    alert('已啟動後台靜默下載至 update.pack，在下次冷啟動或退出時自動生效！');
+    const res = await fetch(`${AGENT_BASE}/api/agent/upgrade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ download_url: latestDownloadUrl, is_silent: true })
+    });
+    const d = await res.json();
+    alert(d.message);
+  }
+
+  async function fetchCoreVersion() {
+    if (!mihomoController) return;
+    try {
+      const res = await fetch(`${mihomoController.api_base}/version`, {
+        headers: { 'Authorization': `Bearer ${mihomoController.secret}` }
+      });
+      const data = await res.json();
+      document.getElementById('core-ver-text').textContent = data.version || '未知';
+    } catch (e) {}
+  }
+
+  function connectMemory() {
+    if (!mihomoController || memoryWs) return;
+    try {
+      memoryWs = new WebSocket(`ws://127.0.0.1:9090/memory?token=${encodeURIComponent(mihomoController.secret)}`);
+      memoryWs.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (typeof d.inuse === 'number') {
+          document.getElementById('mem-val').textContent = (d.inuse / 1024 / 1024).toFixed(1);
+        }
+      };
+      memoryWs.onclose = () => { memoryWs = null; };
+    } catch (e) {}
+  }
+
+  function connectTraffic() {
+    if (!mihomoController || trafficWs) return;
+    try {
+      trafficWs = new WebSocket(`ws://127.0.0.1:9090/traffic?token=${encodeURIComponent(mihomoController.secret)}`);
+      trafficWs.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        document.getElementById('speed-down').textContent = formatSpeed(d.down) + ' ↓';
+        document.getElementById('speed-up').textContent = formatSpeed(d.up) + ' ↑';
+      };
+      trafficWs.onclose = () => { trafficWs = null; };
+    } catch (e) {}
+  }
+
+  function formatSpeed(b) {
+    if (b < 1024) return b + ' B/s';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB/s';
+    return (b / 1048576).toFixed(2) + ' MB/s';
+  }
+
+  async function fetchIP() {
+    try {
+      const res = await fetch('https://api.ipify.org?format=json');
+      const d = await res.json();
+      document.getElementById('ip-val').textContent = d.ip;
+    } catch (e) {
+      document.getElementById('ip-val').textContent = '檢測中...';
+    }
+  }
+
+  function switchTab(t) {
+    ['dash', 'nodes', 'settings', 'ota', 'sub', 'logs'].forEach(tab => {
+      document.getElementById(`tab-btn-${tab}`).className = (t === tab) ? 'nav-btn active' : 'nav-btn';
+      document.getElementById(`tab-${tab}`).style.display = (t === tab) ? 'flex' : 'none';
+    });
+    if (t === 'nodes') loadProxyGroups();
+    if (t === 'ota') { fetchCoreVersion(); checkGitHubRelease(); }
+  }
+
+  async function pushSubUrl() {
+    const url = document.getElementById('sub-url-input').value.trim();
+    if (!url) return alert('請輸入 URL');
+    const res = await fetch(`${AGENT_BASE}/api/subscription/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const d = await res.json();
+    alert(d.message);
+  }
+
+  async function exitClient() {
+    if (!confirm('確定要退出 ReiaClash 並清理網絡配置嗎？')) return;
+    await fetch(`${AGENT_BASE}/api/agent/exit`, { method: 'POST' });
+    document.body.innerHTML = '<div style="color:white;text-align:center;padding:100px;"><h1>ReiaClash 已退出</h1><p>網絡代理已徹底清除並復原。</p></div>';
+  }
+
+  init();
+  setInterval(syncRealStatus, 1500);
+</script>
+</body>
+</html>

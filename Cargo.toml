@@ -1,0 +1,39 @@
+[package]
+name = "ReiaClash"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 异步运行时与工具
+tokio = { version = "1.43", features = ["full"] }
+
+# 最新且最易用的 Web 框架
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower = "0.5"
+
+# 序列化与数据格式
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# 托盘图标与原生菜单（Tauri 官方出品，开箱即用）
+tray-icon = "0.19"
+muda = "0.15"
+
+# 工具库：日志输出与随机字符串生成
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.11", features = ["v4"] }
+
+# Windows 系统特定能力（修改系统代理与开机自启）
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+# 在 Cargo.toml 的 [dependencies] 下追加：
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
+notify-rust = "4.11"
+urlencoding = "2.1"
+flate2 = "1.0"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
