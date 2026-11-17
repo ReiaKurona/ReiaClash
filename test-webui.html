@@ -40,6 +40,9 @@
     .status-dot.online { background: var(--success); box-shadow: 0 0 10px var(--success); }
 
     .nav-tabs { display: flex; gap: 6px; }
+    .top-bar,.nav-tabs { flex-wrap:wrap; }
+    .network-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .network-table td,.network-table th { text-align:left; padding:8px; border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
     .nav-btn {
       background: transparent; border: none; color: var(--text-muted); font-size: 13px; font-weight: 700;
       padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: 0.2s;
@@ -108,6 +111,9 @@
 
     .badge { padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #334155; }
     .badge.online { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+    #notice { display:none; position:fixed; right:18px; bottom:18px; z-index:20; max-width:min(440px, calc(100vw - 36px)); padding:12px 16px; border:1px solid var(--border); border-radius:10px; background:#172033; box-shadow:0 12px 32px #0008; font-size:13px; line-height:1.5; }
+    #notice.error { border-color:var(--danger); }
+    #notice.success { border-color:var(--success); }
     button.btn {
       padding: 8px 14px; border: none; border-radius: 8px; background: var(--primary);
       color: white; font-weight: 600; cursor: pointer; font-size: 12px;
@@ -118,6 +124,7 @@
       padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none;
     }
   </style>
+<link id="reia-favicon" rel="icon" type="image/png" href="data:image/png;base64,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">
 </head>
 <body>
 
@@ -130,12 +137,15 @@
       <span id="agent-ver" class="badge">未連接</span>
     </div>
     <div class="nav-tabs">
+      <button id="connect-agent" class="btn" style="display:none;" onclick="connectAgentFromClick()">连接本机</button>
       <button id="tab-btn-dash" class="nav-btn active" onclick="switchTab('dash')">📊 儀表盤</button>
       <button id="tab-btn-nodes" class="nav-btn" onclick="switchTab('nodes')">🌐 節點選擇</button>
       <button id="tab-btn-settings" class="nav-btn" onclick="switchTab('settings')">⚙️ 偏好與網絡</button>
       <button id="tab-btn-ota" class="nav-btn" onclick="switchTab('ota')">⚡ 內核維護</button>
       <button id="tab-btn-sub" class="nav-btn" onclick="switchTab('sub')">📥 訂閱配置</button>
       <button id="tab-btn-logs" class="nav-btn" onclick="switchTab('logs')">📝 內核日誌</button>
+      <button id="tab-btn-connections" class="nav-btn" onclick="switchTab('connections')">連接管理</button>
+      <button id="tab-btn-dns" class="nav-btn" onclick="switchTab('dns')">DNS 檢查</button>
     </div>
   </div>
 
@@ -148,7 +158,7 @@
           <span id="hero-status-badge" class="badge">檢測中...</span>
         </div>
         <p id="hero-status-desc" style="color:var(--text-muted); font-size:13px; margin-top:6px;">
-          零停機熱重載控制：按開關切換網絡接管，內核無需殺進程
+          按开关切换系统代理或 TUN 接管；需要应用内核配置时会自动重启 mihomo
         </p>
         <div style="margin-top: 14px; display:flex; gap:16px; font-size:12px; color:var(--text-muted);">
           <span>物理狀態: <strong id="real-interception-text" style="color:white;">-</strong></span>
@@ -193,23 +203,35 @@
   <div id="tab-nodes" style="display: none; flex-direction:column; gap:14px;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <span style="font-size:13px; color:var(--text-muted);">切換節點自動強制掐斷舊連接，流量無縫切換</span>
-      <button class="btn" onclick="loadProxyGroups()">🔄 刷新列表</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" onclick="resetNodeOrder()">恢復訂閱順序</button>
+        <button class="btn" onclick="loadProxyGroups()">🔄 刷新列表</button>
+      </div>
+    </div>
+    <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <label for="panel-site-name">XBoard 站點名</label>
+      <input id="panel-site-name" type="text" placeholder="優先顯示同名節點組" onchange="setPanelSiteName(this.value)">
+      <span style="font-size:12px;color:var(--text-muted);">預設依訂閱排序；可調整組順序、排序或拖動節點。偏好保存在此瀏覽器。</span>
     </div>
     <div id="groups-container"></div>
   </div>
 
   <!-- ================= TAB 3: 偏好與網絡 (含區域網路連線與開機自啟) ================= -->
   <div id="tab-settings" style="display: none; flex-direction:column; gap:14px;">
+    <div class="card" style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
+      <span>手動重啟內核，現有連接將短暫中斷</span>
+      <button id="restart-core-button" class="btn" onclick="restartKernel()">重啟 mihomo</button>
+    </div>
     <div class="card">
       <h3 style="font-size:15px; margin-bottom:8px;">網絡接管偏好（總開關開啟時按此執行）</h3>
       
       <div class="switch-row">
         <div>
-          <div style="font-weight:600; font-size:14px;">Windows 系統代理</div>
+          <div style="font-weight:600; font-size:14px;">系统代理</div>
           <div style="font-size:12px; color:var(--text-muted);">將本機流量導向 127.0.0.1:7890</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="pref-sys-proxy" onchange="updatePrefSettings()">
+          <input type="checkbox" id="pref-sys-proxy" onchange="updatePrefSettings('use_system_proxy')">
           <span class="slider"></span>
         </label>
       </div>
@@ -220,7 +242,7 @@
           <div style="font-size:12px; color:var(--text-muted);">需管理員權限，接管所有無代理軟件與遊戲流量</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="pref-tun" onchange="updatePrefSettings()">
+          <input type="checkbox" id="pref-tun" onchange="updatePrefSettings('use_tun')">
           <span class="slider"></span>
         </label>
       </div>
@@ -228,24 +250,35 @@
       <div class="switch-row">
         <div>
           <div style="font-weight:600; font-size:14px;">TUN 協議棧</div>
-          <div style="font-size:12px; color:var(--text-muted);">支持 mixed / gvisor / system / mips</div>
+          <div style="font-size:12px; color:var(--text-muted);">支持 mips / mixed / gvisor / system；mips 为 mihomo 自研 IP 协议栈</div>
         </div>
-        <select id="pref-tun-stack" onchange="updatePrefSettings()">
-          <option value="mixed">mixed (推薦)</option>
+        <select id="pref-tun-stack" onchange="updatePrefSettings('tun_stack')">
+          <option value="mips">mips (mihomo IP 協議棧)</option>
+          <option value="mixed">mixed (混合協議棧)</option>
           <option value="gvisor">gvisor</option>
           <option value="system">system</option>
-          <option value="mips">mips</option>
         </select>
+      </div>
+
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">Geo 低內存模式</div>
+          <div style="font-size:12px; color:var(--text-muted);">預設開啟，使用節省內存的 Geo 載入器；切換會重啟內核，連線將短暫中斷</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-geo-low-memory" checked onchange="toggleGeoLowMemory(this.checked)">
+          <span class="slider"></span>
+        </label>
       </div>
 
       <!-- 新增：區域網路連線開關 -->
       <div class="switch-row">
         <div>
-          <div style="font-weight:600; font-size:14px;">區域網路連線 🖧 (Allow LAN)</div>
-          <div style="font-size:12px; color:var(--text-muted);">允許局域網內其他設備連接本機 7890 端口共享代理</div>
+          <div style="font-weight:600; font-size:14px;">允许局域网连接</div>
+          <div style="font-size:12px; color:var(--text-muted);">向局域网开放代理端口 7890，控制接口仍仅限本机</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="pref-allow-lan" onchange="updatePrefSettings()">
+          <input type="checkbox" id="pref-allow-lan" onchange="updatePrefSettings('allow_lan')">
           <span class="slider"></span>
         </label>
       </div>
@@ -261,12 +294,24 @@
           <span class="slider"></span>
         </label>
       </div>
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:600; font-size:14px;">特权 Mihomo 服务</div>
+          <div id="core-service-description" style="font-size:12px; color:var(--text-muted);">由系统服务管理器守护内核，需要时申请 TUN 网络权限</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="pref-core-service" onchange="toggleCoreService(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); padding:0 4px;">
+        服务进程只运行 Mihomo 和内核控制接口；WebUI agent 继续在当前登录用户下运行。
+        <span id="core-service-status" role="status" aria-live="polite"></span>
+        <button id="repair-core-service" class="btn" onclick="toggleCoreService(true, true)">修復服務</button>
+      </div>
+      <pre id="core-service-operation-error" hidden role="alert" style="white-space:pre-wrap; overflow-wrap:anywhere; color:var(--danger); font-size:12px; user-select:text;"></pre>
     </div>
 
-    <div class="card">
-      <h3 style="font-size:15px; margin-bottom:12px;">客戶端退出</h3>
-      <button class="btn danger" onclick="exitClient()">❌ 退出 ReiaClash 並完全復原網絡設置</button>
-    </div>
   </div>
 
   <!-- ================= TAB 4: 內核維護 ================= -->
@@ -289,7 +334,7 @@
           <div style="font-size:12px; color:var(--text-muted);">巡檢到新版自動下載到 update.pack，在下次冷啟動或退出時無感替換</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="pref-auto-ota" onchange="updatePrefSettings()">
+          <input type="checkbox" id="pref-auto-ota" onchange="updatePrefSettings('auto_update_enabled')">
           <span class="slider"></span>
         </label>
       </div>
@@ -299,7 +344,7 @@
           <div style="font-weight:600; font-size:14px;">巡檢間隔 (小時)</div>
           <div style="font-size:12px; color:var(--text-muted);">自定義後台定時巡檢的時間間隔</div>
         </div>
-        <input type="number" id="pref-ota-hours" min="1" max="168" style="width:80px;" onchange="updatePrefSettings()">
+        <input type="number" id="pref-ota-hours" min="1" max="168" style="width:80px;" onchange="updatePrefSettings('update_interval_hours')">
       </div>
     </div>
 
@@ -308,6 +353,16 @@
       <div style="display:flex; gap:10px;">
         <button class="btn" onclick="startManualUpgrade()">🚀 立即熱升級當前內核</button>
         <button class="btn" style="background:#475569;" onclick="startSilentDownload()">🤫 僅靜默打包到 update.pack</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="font-size:15px; margin-bottom:8px;">Agent 維護</h3>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">清理下載暫存和 DNS 記錄，或清空 Agent 日誌。保留配置、訂閱、密鑰和已下載內核。</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="clear-agent-cache" class="btn" onclick="agentMaintenance('cache', this)">清理 Agent 緩存</button>
+        <button id="clear-agent-logs" class="btn" onclick="agentMaintenance('logs', this)">清空 Agent 日誌</button>
+        <button id="open-cache-directory" class="btn" onclick="agentMaintenance('open-cache', this)">打開緩存目錄</button>
+        <button id="open-config-directory" class="btn" onclick="agentMaintenance('open-config', this)">打開配置目錄</button>
       </div>
     </div>
   </div>
@@ -331,26 +386,228 @@
     </div>
     <div id="log-console"></div>
   </div>
+  <div id="tab-connections" class="card" style="display:none;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="connection-filter" type="text" placeholder="域名 / IP / 進程 / 節點 / 規則" oninput="renderConnections()">
+      <button class="btn" onclick="loadConnections()">刷新</button>
+      <button class="btn danger" onclick="closeConnection()">關閉全部連接</button>
+      <span id="connection-summary"></span>
+    </div>
+    <div style="overflow:auto;"><table class="network-table"><thead><tr><th>目標 / 來源</th><th>進程 / 協議</th><th>節點鏈 / 規則</th><th>下載 / 上傳</th><th>操作</th></tr></thead><tbody id="connection-rows"></tbody></table></div>
+    <pre id="connection-details" style="white-space:pre-wrap;overflow-wrap:anywhere;"></pre>
+  </div>
+  <div id="tab-dns" class="card" style="display:none;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input id="dns-name" type="text" placeholder="example.com">
+      <select id="dns-type"><option>A</option><option>AAAA</option><option>CNAME</option><option>MX</option><option>TXT</option><option>NS</option><option>PTR</option><option>HTTPS</option></select>
+      <button id="dns-query-button" class="btn" onclick="queryDNS()">查詢 DNS</button>
+      <button class="btn" onclick="loadDNSRecords()">刷新記錄</button>
+      <button class="btn danger" onclick="clearDNSRecords()">清空記錄</button>
+    </div>
+    <pre id="dns-result" style="white-space:pre-wrap;overflow-wrap:anywhere;"></pre>
+    <span id="dns-record-status" style="font-size:12px;color:var(--text-muted);"></span>
+    <div style="overflow:auto;"><table class="network-table"><thead><tr><th>時間</th><th>來源</th><th>查詢 / 結果</th></tr></thead><tbody id="dns-record-rows"></tbody></table></div>
+  </div>
 </div>
+<div id="notice" role="status" aria-live="polite"></div>
 
 <script>
-  const AGENT_BASE = 'http://127.0.0.1:25500';
+  const pageHost = window.location.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
+  const pageIsLocal = LOCAL_HOSTS.includes(pageHost) || pageHost.endsWith('.localhost') || window.location.protocol === 'file:' || !pageHost;
+  const agentHosts = pageIsLocal ? (pageHost ? [pageHost, '127.0.0.1', '::1'] : ['127.0.0.1', '::1']) : ['127.0.0.1', '::1'];
+  const AGENT_BASES = [...new Set(agentHosts)].map(host =>
+    `http://${host === '::1' ? '[::1]' : host}:25500`
+  );
+  let AGENT_BASE = AGENT_BASES[0];
   let mihomoController = null;
   let trafficWs = null, memoryWs = null, logsWs = null;
+  let mihomoSocketReconnectTimer = null;
+  let lastMihomoSocketNotice = 0;
   let latestDownloadUrl = '';
+  let noticeTimer = null;
+  let lastAgentError = '';
+  let lastEventId = 0;
+	let mutationPending = false;
+  let proxyState = { proxies: {}, order: [] };
+  const groupViews = new Map();
+  let panelPrefs = readPanelPrefs();
+  let panelSiteName = String(window.REIA_THEME?.siteName || panelPrefs.siteName || '').trim();
+  let connectionState = [];
+  let connectionsLoading = false;
+  let dnsLoading = false;
+  let proxyLoadVersion = 0;
+  let renderedNodeMode = null;
+  let agentConnected = false;
+  let agentConnectInFlight = null;
+  let scanningAgent = false;
+
+  function panelHandshakePayload() {
+    return { panel_origin: window.location.protocol === 'file:' ? 'null' : (window.location.origin || 'null'), panel_url: window.location.href || '' };
+  }
+
+  function readPanelPrefs() {
+    try { const prefs = JSON.parse(localStorage.getItem('reia.panel.nodes') || '{}'); return prefs && typeof prefs === 'object' && !Array.isArray(prefs) ? prefs : {}; } catch (_) { return {}; }
+  }
+  function savePanelPrefs() { try { localStorage.setItem('reia.panel.nodes', JSON.stringify(panelPrefs)); } catch (_) {} }
+  function setPanelSiteName(name) {
+    panelSiteName = String(name || '').trim(); panelPrefs.siteName = panelSiteName; savePanelPrefs();
+    document.getElementById('panel-site-name').value = panelSiteName;
+    if (Object.keys(proxyState.proxies).length) renderGroups(proxyState.proxies);
+  }
+  window.ReiaClashPanel = { configure(options = {}) { if (typeof options.siteName === 'string') setPanelSiteName(options.siteName); }, refreshNodes: () => loadProxyGroups() };
+
+  function orderedGroupNames(proxies, mode) {
+    const types = ['Selector', 'Fallback', 'URLTest', 'LoadBalance', 'Relay'];
+    const known = Object.keys(proxies).filter(name => types.includes(proxies[name].type));
+    const configured = [...proxyState.order, ...(proxies.GLOBAL?.all || []), ...known];
+    const original = [...new Set(configured)].filter(name => known.includes(name));
+    const custom = Array.isArray(panelPrefs.groupOrder) ? panelPrefs.groupOrder : [];
+    const order = [...new Set([...custom, ...original])].filter(name => known.includes(name));
+    const pinned = mode === 'global' ? ['GLOBAL', panelSiteName] : [panelSiteName];
+    return [...new Set([...pinned.filter(name => known.includes(name)), ...order])].filter(name => mode !== 'rule' || name !== 'GLOBAL');
+  }
+  function orderedNodes(group, proxies) {
+    const original = [...(proxies[group]?.all || [])];
+    const mode = panelPrefs.sort?.[group] || 'subscription';
+    if (mode === 'name') return original.sort((a,b) => a.localeCompare(b, 'zh-CN', { numeric:true }));
+    if (mode === 'latency') {
+      const delay = name => { const h = proxies[name]?.history || []; return h.length && h[h.length-1].delay > 0 ? h[h.length-1].delay : Infinity; };
+      return original.sort((a,b) => delay(a)-delay(b));
+    }
+    if (mode === 'custom') {
+      const saved = Array.isArray(panelPrefs.nodeOrder?.[group]) ? panelPrefs.nodeOrder[group] : [];
+      return [...new Set([...saved, ...original])].filter(name => original.includes(name));
+    }
+    return original;
+  }
+  function resetNodeOrder() { panelPrefs.groupOrder = []; panelPrefs.sort = {}; panelPrefs.nodeOrder = {}; savePanelPrefs(); renderGroups(proxyState.proxies); }
+  function moveGroup(name, direction) {
+    const active = document.querySelector('.segmented button.active');
+    const names = orderedGroupNames(proxyState.proxies, active ? active.id.replace('btn-mode-', '') : 'rule');
+    const index = names.indexOf(name), target = index + direction;
+    if (index < 0 || target < 0 || target >= names.length) return;
+    [names[index],names[target]] = [names[target],names[index]];
+    panelPrefs.groupOrder = names; savePanelPrefs(); renderGroups(proxyState.proxies);
+  }
+
+  function showNotice(message, kind = 'error') {
+    const notice = document.getElementById('notice');
+    notice.textContent = message;
+    notice.className = kind;
+    notice.style.display = 'block';
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { notice.style.display = 'none'; }, kind === 'error' ? 9000 : 4000);
+  }
+
+  async function agentFetch(url, options = {}) {
+    const mutating = options.method && options.method !== 'GET' && !url.endsWith('/api/handshake');
+    if (mutating && mutationPending) throw new Error('上一项操作尚未完成，请稍候');
+    if (mutating) mutationPending = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), mutating ? 300000 : 10000);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal, targetAddressSpace: 'loopback' });
+    } finally {
+      clearTimeout(timer);
+      if (mutating) mutationPending = false;
+    }
+  }
+
+  async function agentMaintenance(action, button) {
+    button.disabled = true;
+    try {
+      const opening = action.startsWith('open-');
+      const path = opening ? '/api/agent/directory/open' : `/api/agent/${action}/clear`;
+      const options = { method: 'POST' };
+      if (opening) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body = JSON.stringify({ directory: action.slice(5) });
+      }
+      const response = await agentFetch(`${AGENT_BASE}${path}`, options);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || `操作失败 (${response.status})`);
+      const message = opening ? '已请求客户端打开目录。' : action === 'cache'
+        ? `已清理 ${result.cleared.cache_files} 个暂存文件和 ${result.cleared.dns_records} 条 DNS 记录。`
+        : `已清空 ${result.cleared.log_files} 个 Agent 日志文件和 ${result.cleared.events} 条事件。`;
+      showNotice(message, 'success');
+    } catch (e) { showNotice(`Agent 维护失败：${e.message}`); }
+    finally { button.disabled = false; }
+  }
+
+  async function loopbackPermission() {
+    if (!navigator.permissions?.query) return 'prompt';
+    try {
+      for (const name of ['loopback-network', 'local-network', 'private-network-access']) {
+        try {
+          const res = await navigator.permissions.query({ name });
+          if (res && res.state) return res.state;
+        } catch (_) {}
+      }
+      return 'prompt';
+    } catch (e) {
+      return 'prompt';
+    }
+  }
 
   async function init() {
+    // 本地环境 (localhost / 127.0.0.1 / file://) 无需等待远程 PNA 授权，直接尝试连接
+    if (pageIsLocal) {
+      try {
+        await connectAgent();
+        return;
+      } catch (e) {
+        // 如果初次直连失败，继续走授权提示流程
+      }
+    }
+    const permission = await loopbackPermission();
+    const connectButton = document.getElementById('connect-agent');
+    if (permission === 'granted') {
+      await connectAgent();
+    } else {
+      connectButton.style.display = 'inline-block';
+      document.getElementById('agent-ver').textContent = permission === 'denied' ? '本機訪問被禁止' : '等待本機授權';
+      if (permission === 'denied') showNotice('请在当前面板站点权限中允许“本地网络 / Loopback network”，然后再点击“连接本机”。');
+    }
+  }
+
+  async function connectAgentFromClick() {
+    await connectAgent();
+  }
+
+  async function connectAgent(silent = false) {
+    if (agentConnectInFlight) return agentConnectInFlight;
+    agentConnectInFlight = connectAgentAttempt(silent);
+    try { return await agentConnectInFlight; } finally { agentConnectInFlight = null; }
+  }
+
+  async function connectAgentAttempt(silent) {
     try {
-      const res = await fetch(`${AGENT_BASE}/api/handshake`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Request-Private-Network': 'true' },
-        body: JSON.stringify({ panel_origin: window.location.href })
-      });
-      const data = await res.json();
+      let data = null;
+      let connectionError = null;
+      for (const candidate of AGENT_BASES) {
+        try {
+          const res = await agentFetch(`${candidate}/api/handshake`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(panelHandshakePayload())
+          });
+          const response = await res.json();
+          if (!res.ok) throw new Error(response.message || `连接失败 (${res.status})`);
+          AGENT_BASE = candidate;
+          data = response;
+          break;
+        } catch (e) {
+          connectionError = e;
+        }
+      }
+      if (!data) throw connectionError || new Error('没有发现本机 ReiaClash agent');
       document.getElementById('conn-dot').className = 'status-dot online';
       document.getElementById('agent-ver').className = 'badge online';
       document.getElementById('agent-ver').textContent = `Agent v${data.agent_version}`;
+      document.getElementById('connect-agent').style.display = 'none';
       mihomoController = data.mihomo_controller;
+      agentConnected = true;
 
       connectTraffic();
       connectMemory();
@@ -359,16 +616,45 @@
       syncAutoStart();
       fetchIP();
       fetchCoreVersion();
+      pollAgentEvents();
+      if (!silent) showNotice(data.panel?.paired ? '面板已连接。' : '已连接客户端。', 'success');
+      return true;
     } catch (e) {
-      document.getElementById('agent-ver').textContent = '未連接';
+      agentConnected = false;
+      document.getElementById('agent-ver').textContent = '未连接';
+      document.getElementById('connect-agent').style.display = 'inline-block';
+      if (!silent) showNotice(`无法连接本机 ReiaClash：${e.message}。正在自动重试，请保持此页面打开；首次访问需允许浏览器访问本地网络。`);
+      return false;
     }
+  }
+
+  async function scanAgent() {
+    if (scanningAgent || agentConnectInFlight) return;
+    scanningAgent = true;
+    try {
+      if (!agentConnected) { await connectAgent(true); return; }
+      const response = await agentFetch(`${AGENT_BASE}/api/handshake`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(panelHandshakePayload()) });
+      if (!response.ok) throw new Error('Agent 不可用');
+      const data = await response.json();
+      mihomoController = data.mihomo_controller;
+    } catch (_) {
+      agentConnected = false; mihomoController = null;
+      for (const socket of [trafficWs,memoryWs,logsWs]) { try { socket?.close(); } catch (_) {} }
+      trafficWs = memoryWs = logsWs = null;
+      document.getElementById('conn-dot').className = 'status-dot';
+      document.getElementById('agent-ver').textContent = '等待 Agent，自動掃描中';
+      document.getElementById('connect-agent').style.display = 'inline-block';
+    } finally { scanningAgent = false; }
   }
 
   // 同步物理真實狀態
   async function syncRealStatus() {
+    if (mutationPending) return;
     try {
-      const res = await fetch(`${AGENT_BASE}/api/agent/real-status`);
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/real-status`);
+      if (!res.ok) throw new Error(`状态查询失败 (${res.status})`);
       const d = await res.json();
+      if (mutationPending) return;
 
       const masterBtn = document.getElementById('master-btn');
       const badge = document.getElementById('hero-status-badge');
@@ -377,12 +663,16 @@
       const pauseIcon = document.getElementById('icon-pause');
       const realText = document.getElementById('real-interception-text');
       const lanText = document.getElementById('real-lan-text');
+      if (d.last_error && d.last_error !== lastAgentError) {
+        lastAgentError = d.last_error;
+        showNotice(`mihomo 状态：${d.last_error}`);
+      }
 
       let activeModes = [];
       if (d.real_system_proxy) activeModes.push('系統代理(7890)');
       if (d.real_tun) activeModes.push(`TUN(${d.settings.tun_stack})`);
 
-      lanText.textContent = d.settings.allow_lan ? '已開啟 (0.0.0.0:7890)' : '已關閉';
+      lanText.textContent = d.real_allow_lan ? '局域网代理已开放 (7890)' : '仅本机访问';
 
       if (d.is_actually_intercepting) {
         masterBtn.className = 'hero-btn running';
@@ -403,117 +693,226 @@
       }
 
       ['rule', 'global', 'direct'].forEach(m => {
-        document.getElementById(`btn-mode-${m}`).className = (d.settings.outbound_mode === m) ? 'active' : '';
+        document.getElementById(`btn-mode-${m}`).className = ((d.actual_mode || d.settings.outbound_mode) === m) ? 'active' : '';
       });
+      const nodeMode = d.actual_mode || d.settings.outbound_mode;
+      if (nodeMode !== renderedNodeMode && document.getElementById('tab-nodes').style.display === 'flex' && Object.keys(proxyState.proxies).length) renderGroups(proxyState.proxies);
 
       document.getElementById('pref-sys-proxy').checked = d.settings.use_system_proxy;
       document.getElementById('pref-tun').checked = d.settings.use_tun;
       document.getElementById('pref-tun-stack').value = d.settings.tun_stack;
+	  document.getElementById('pref-geo-low-memory').checked = d.settings.geo_low_memory !== false;
       document.getElementById('pref-allow-lan').checked = d.settings.allow_lan;
       document.getElementById('pref-auto-ota').checked = d.settings.auto_update_enabled;
       document.getElementById('pref-ota-hours').value = d.settings.update_interval_hours;
-    } catch (e) {}
+    } catch (e) { showNotice(e.message); }
   }
 
   async function syncAutoStart() {
     try {
-      const res = await fetch(`${AGENT_BASE}/api/system/status`);
+      const res = await agentFetch(`${AGENT_BASE}/api/system/status`);
       const d = await res.json();
+      if (!res.ok) throw new Error(d.message || `状态查询失败 (${res.status})`);
       document.getElementById('pref-autostart').checked = d.autostart_enabled;
-    } catch (e) {}
+      const coreServiceToggle = document.getElementById('pref-core-service');
+      const coreServiceStatus = document.getElementById('core-service-status');
+      const coreServiceDescription = document.getElementById('core-service-description');
+      const registration = d.core_service_registration;
+      coreServiceToggle.checked = Boolean(registration ? (registration.installed || registration.running) : d.core_service_enabled);
+      coreServiceToggle.disabled = !d.core_service_supported && !d.core_service_enabled;
+      coreServiceStatus.textContent = d.core_service_enabled ? '内核由特权服务管理。' : '内核由当前用户进程管理。';
+      if (registration) {
+        coreServiceStatus.textContent = `${registration.backend} / ${registration.name || ''}：${registration.installed ? (registration.running ? '已注册，运行中' : '已注册，未运行') : '未注册'}。`;
+        if (registration.error) coreServiceStatus.textContent += registration.error;
+		if (registration.installed && d.core_service_ready === false) coreServiceStatus.textContent += ' 内核尚未就绪，请修复服务。';
+		if (d.core_service_error) coreServiceStatus.textContent += ` ${d.core_service_error}`;
+        if (registration.legacy_helper) coreServiceStatus.textContent += ' 舊版服務，點擊「修復服務」遷移到獨立服務進程。';
+        if (d.core_service_enabled && !registration.installed) coreServiceStatus.textContent += ' 请开启此开关以注册/修复系统服务。';
+      }
+      if (!d.core_service_supported) {
+        coreServiceDescription.textContent = '此平台的特权内核服务安装器尚未提供。';
+      } else {
+        coreServiceDescription.textContent = '系统服务守护内核并提供 TUN 权限。退出托盘后代理和面板连接继续运行；关闭此开关将卸载服务并关闭 TUN。';
+      }
+    } catch (e) { showNotice(`读取开机启动状态失败：${e.message}`); }
+  }
+
+  async function toggleCoreService(enable, repair = false) {
+    serviceOperationError('');
+    const toggle = document.getElementById('pref-core-service');
+    const repairButton = document.getElementById('repair-core-service');
+    repairButton.disabled = true;
+    toggle.disabled = true;
+    document.getElementById('core-service-status').textContent = enable ? '正在请求系统授权并安装，请完成系统密码 / UAC 对话框…' : '正在请求系统授权并卸载…';
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/system/core-service`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable, repair })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `操作失敗 (${res.status})`);
+      showNotice(enable ? 'Mihomo 特权服务已安装并启动。' : 'Mihomo 特权服务已移除。', 'success');
+      await syncAutoStart();
+    } catch (e) {
+      serviceOperationError(e.message);
+      showNotice(`Mihomo 特权服务操作失败：${e.message}`);
+      await syncAutoStart();
+    } finally {
+      toggle.disabled = false;
+      repairButton.disabled = false;
+    }
+  }
+
+  function serviceOperationError(message) {
+    const detail = document.getElementById('core-service-operation-error');
+    detail.textContent = message;
+    detail.hidden = !message;
+  }
+
+  async function pollAgentEvents() {
+    if (!mihomoController) return;
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/events?since=${lastEventId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const event of data.events || []) {
+        lastEventId = Math.max(lastEventId, event.id);
+        showNotice(event.message, event.level === 'info' ? 'success' : 'error');
+      }
+    } catch (e) { /* 状态轮询会继续，短时断连不打断面板操作。 */ }
+  }
+
+  async function toggleGeoLowMemory(enable) {
+    const toggle = document.getElementById('pref-geo-low-memory');
+    toggle.disabled = true;
+    try {
+      const response = await agentFetch(`${AGENT_BASE}/api/agent/geo-low-memory`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || `保存失败 (${response.status})`);
+      toggle.checked = result.enabled;
+      showNotice(`Geo 低内存模式已${result.enabled ? '开启' : '关闭'}。${result.restart_requested ? '正在重启内核以应用。' : '下次内核启动时应用。'}`, 'success');
+    } catch (e) {
+      toggle.checked = !enable;
+      showNotice(`Geo 低内存模式设置失败：${e.message}`);
+    } finally {
+      toggle.disabled = false;
+      await syncRealStatus();
+    }
   }
 
   async function toggleAutoStart(enable) {
-    await fetch(`${AGENT_BASE}/api/system/autostart`, {
+    const toggle = document.getElementById('pref-autostart');
+    toggle.disabled = true;
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/system/autostart`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enable })
-    });
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `操作失败 (${res.status})`);
+      showNotice(enable ? '已注册开机启动。' : '已取消开机启动。', 'success');
+    } catch (e) { showNotice(`开机启动设置失败：${e.message}`); }
+    finally { await syncAutoStart(); toggle.disabled = false; }
   }
 
   async function toggleMaster() {
-    const res = await fetch(`${AGENT_BASE}/api/agent/real-status`);
-    const d = await res.json();
-    const target = !d.is_actually_intercepting;
-
-    await fetch(`${AGENT_BASE}/api/agent/master`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enable: target })
-    });
-    setTimeout(syncRealStatus, 400);
-    setTimeout(fetchIP, 1500);
+    serviceOperationError('');
+    showNotice('正在切换代理；若 TUN 权限不足，系统将弹出授权窗口。', 'success');
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/real-status`);
+      const d = await res.json();
+      const target = !d.settings.enabled;
+      const action = await agentFetch(`${AGENT_BASE}/api/agent/master`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: target })
+      });
+      const result = await action.json();
+      if (!action.ok) throw new Error(result.message || `操作失败 (${action.status})`);
+      await syncAutoStart();
+      showNotice(target ? '代理已启动。' : '代理已暂停。', 'success');
+      setTimeout(syncRealStatus, 500);
+      setTimeout(fetchIP, 1500);
+    } catch (e) { serviceOperationError(e.message); showNotice(`切换代理失败：${e.message}`); }
   }
 
-  async function updatePrefSettings() {
+  async function updatePrefSettings(field) {
+    serviceOperationError('');
     const sp = document.getElementById('pref-sys-proxy').checked;
     const tun = document.getElementById('pref-tun').checked;
     const stack = document.getElementById('pref-tun-stack').value;
     const lan = document.getElementById('pref-allow-lan').checked;
     const autoOta = document.getElementById('pref-auto-ota').checked;
     const otaHrs = parseInt(document.getElementById('pref-ota-hours').value) || 24;
+	const patch = { use_system_proxy: sp, use_tun: tun, tun_stack: stack, allow_lan: lan, auto_update_enabled: autoOta, update_interval_hours: otaHrs };
+	if (tun) showNotice('正在保存；启用 TUN 时会按需请求系统授权。', 'success');
 
-    await fetch(`${AGENT_BASE}/api/agent/settings`, {
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        use_system_proxy: sp,
-        use_tun: tun,
-        tun_stack: stack,
-        allow_lan: lan,
-        auto_update_enabled: autoOta,
-        update_interval_hours: otaHrs
-      })
-    });
-    syncRealStatus();
+      body: JSON.stringify(field ? { [field]: patch[field] } : patch)
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || `保存失败 (${res.status})`);
+      await syncRealStatus();
+      await syncAutoStart();
+      showNotice('设置已保存。', 'success');
+    } catch (e) { serviceOperationError(e.message); showNotice(`保存设置失败：${e.message}`); syncRealStatus(); }
   }
 
   async function setOutboundMode(mode) {
-    await fetch(`${AGENT_BASE}/api/agent/settings`, {
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outbound_mode: mode })
-    });
-    syncRealStatus();
-    if (document.getElementById('tab-nodes').style.display === 'flex') {
-      loadProxyGroups();
-    }
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || `切换失败 (${res.status})`);
+      await syncRealStatus();
+    } catch (e) { showNotice(`切换代理模式失败：${e.message}`); }
   }
 
   // 節點選擇與整組測速
   async function loadProxyGroups() {
     const container = document.getElementById('groups-container');
-    container.innerHTML = '<div style="color:var(--text-muted); padding:30px; text-align:center;">正在讀取策略組...</div>';
+    const version = ++proxyLoadVersion;
+    if (!Object.keys(proxyState.proxies).length) container.textContent = '正在讀取策略組...';
 
     try {
-      const res = await fetch(`${AGENT_BASE}/api/core/proxies`);
+      const res = await agentFetch(`${AGENT_BASE}/api/core/proxies`);
+      if (!res.ok) throw new Error(`节点读取失败 (${res.status})`);
       const data = await res.json();
+      if (version !== proxyLoadVersion) return;
+      proxyState = { proxies: data.proxies || {}, order: data.group_order || [] };
+      document.getElementById('panel-site-name').value = panelSiteName;
       renderGroups(data.proxies);
     } catch (e) {
-      container.innerHTML = '<div style="color:var(--danger); padding:30px; text-align:center;">獲取節點列表失敗</div>';
+      if (!Object.keys(proxyState.proxies).length) container.textContent = '獲取節點列表失敗';
+      showNotice(`获取节点列表失败：${e.message}`);
     }
   }
 
   function renderGroups(proxies) {
     const container = document.getElementById('groups-container');
     container.innerHTML = '';
-
-    const groupTypes = ['Selector', 'Fallback', 'URLTest', 'LoadBalance'];
-    let groupNames = Object.keys(proxies).filter(k => groupTypes.includes(proxies[k].type));
+    groupViews.clear();
 
     const activeBtn = document.querySelector('.segmented button.active');
     const currentMode = activeBtn ? activeBtn.id.replace('btn-mode-', '') : 'rule';
+    renderedNodeMode = currentMode;
 
     if (currentMode === 'direct') {
       container.innerHTML = '<div class="card" style="text-align:center; padding:40px; color:var(--text-muted);"><h3>當前為直連模式</h3><p style="margin-top:6px; font-size:13px;">流量直接出站，不使用任何代理節點</p></div>';
       return;
     }
 
-    if (currentMode === 'rule') {
-      groupNames = groupNames.filter(n => n.toUpperCase() !== 'GLOBAL');
-    } else if (currentMode === 'global') {
-      groupNames.sort((a, b) => a.toUpperCase() === 'GLOBAL' ? -1 : 1);
-    }
+    const groupNames = orderedGroupNames(proxies, currentMode);
 
     groupNames.forEach(gName => {
       const g = proxies[gName];
@@ -524,20 +923,37 @@
       card.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div>
-            <strong style="font-size:15px;">${g.name}</strong>
-            <span class="badge" style="margin-left:6px;">${g.type}</span>
+            <strong class="group-name" style="font-size:15px;"></strong>
+            <span class="group-type badge" style="margin-left:6px;"></span>
           </div>
           <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:12px; color:var(--primary); font-weight:700;">當前選中: ${g.now}</span>
-            <button class="btn" style="padding:4px 8px; font-size:11px;" onclick="testGroupDelay('${g.name}')">⚡ 快速測速</button>
+            <span class="group-now" style="font-size:12px; color:var(--primary); font-weight:700;"></span>
+            <button class="btn group-up" title="上移節點組">↑</button>
+            <button class="btn group-down" title="下移節點組">↓</button>
+            <select class="node-sort" aria-label="節點排序"><option value="subscription">訂閱順序</option><option value="name">名稱排序</option><option value="latency">延遲排序</option><option value="custom">自訂拖動</option></select>
+            <button class="btn group-delay" style="padding:4px 8px; font-size:11px;">⚡ 快速測速</button>
           </div>
         </div>
       `;
+      card.querySelector('.group-name').textContent = gName;
+      card.querySelector('.group-type').textContent = g.type;
+      card.querySelector('.group-now').textContent = `当前选择：${g.now || '自动'}`;
+      card.querySelector('.group-delay').addEventListener('click', () => testGroupDelay(gName));
+      card.querySelector('.group-up').onclick = () => moveGroup(gName, -1);
+      card.querySelector('.group-down').onclick = () => moveGroup(gName, 1);
+      const pinned = name => name === panelSiteName || currentMode === 'global' && name === 'GLOBAL';
+      const groupIndex = groupNames.indexOf(gName);
+      card.querySelector('.group-up').disabled = pinned(gName) || groupIndex === 0 || pinned(groupNames[groupIndex - 1]);
+      card.querySelector('.group-down').disabled = pinned(gName) || groupIndex === groupNames.length - 1;
+      const sorting = card.querySelector('.node-sort');
+      sorting.value = panelPrefs.sort?.[gName] || 'subscription';
+      sorting.onchange = () => { (panelPrefs.sort ||= {})[gName] = sorting.value; savePanelPrefs(); renderGroups(proxies); };
+      groupViews.set(gName, card);
 
       const grid = document.createElement('div');
       grid.className = 'node-grid';
 
-      g.all.forEach(nName => {
+      orderedNodes(gName, proxies).forEach(nName => {
         const node = proxies[nName] || { type: 'Node' };
         const isSel = (g.now === nName);
 
@@ -556,14 +972,34 @@
 
         nodeCard.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="node-name" title="${nName}">${nName}</span>
-            <span id="delay-${g.name}-${nName}" class="node-delay" style="color:${dColor}">${dText}</span>
+            <span class="node-name"></span>
+            <span class="node-delay" style="color:${dColor}">${dText}</span>
           </div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:8px;">${node.type}</div>
+          <div class="node-type" style="font-size:11px; color:var(--text-muted); margin-top:8px;"></div>
         `;
+        nodeCard.dataset.group = gName;
+        nodeCard.dataset.node = nName;
+        nodeCard.draggable = true;
+        nodeCard.ondragstart = event => event.dataTransfer.setData('text/plain', JSON.stringify({ group:gName, node:nName }));
+        nodeCard.ondragover = event => event.preventDefault();
+        nodeCard.ondrop = event => {
+          event.preventDefault();
+          try {
+            const source = JSON.parse(event.dataTransfer.getData('text/plain'));
+            if (source.group !== gName || source.node === nName || !g.all.includes(source.node)) return;
+            const names = orderedNodes(gName, proxies).filter(name => name !== source.node);
+            names.splice(names.indexOf(nName), 0, source.node);
+            (panelPrefs.nodeOrder ||= {})[gName] = names; (panelPrefs.sort ||= {})[gName] = 'custom';
+            savePanelPrefs(); renderGroups(proxies);
+          } catch (_) {}
+        };
+        nodeCard.querySelector('.node-name').textContent = nName;
+        nodeCard.querySelector('.node-name').title = nName;
+        nodeCard.querySelector('.node-type').textContent = node.type;
 
         nodeCard.onclick = async () => {
-          await selectNode(g.name, nName);
+          try { await selectNode(gName, nName); }
+          catch (e) { showNotice(`切换节点失败：${e.message}`); }
         };
 
         grid.appendChild(nodeCard);
@@ -575,123 +1011,271 @@
   }
 
   async function selectNode(groupName, nodeName) {
-    const res = await fetch(`${AGENT_BASE}/api/core/select`, {
+    ++proxyLoadVersion;
+    const res = await agentFetch(`${AGENT_BASE}/api/core/select`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ group: groupName, node: nodeName })
     });
     const d = await res.json();
-    if (!d.success) alert(d.message);
-    loadProxyGroups();
+    if (!res.ok || !d.success) throw new Error(d.message || '节点切换失败');
+    if (proxyState.proxies[groupName]) proxyState.proxies[groupName].now = nodeName;
+    const view = groupViews.get(groupName);
+    if (view) {
+      view.querySelector('.group-now').textContent = `当前选择：${nodeName}`;
+      for (const node of view.querySelectorAll('.node-card')) node.classList.toggle('selected', node.dataset.node === nodeName);
+    }
+    showNotice('节点已切换。', 'success');
   }
 
   async function testGroupDelay(groupName) {
-    const res = await fetch(`${AGENT_BASE}/api/core/group-delay`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ group: groupName })
-    });
-    const delayMap = await res.json();
-    for (const [nodeName, delay] of Object.entries(delayMap)) {
-      const el = document.getElementById(`delay-${groupName}-${nodeName}`);
-      if (el) {
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/core/group-delay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group: groupName })
+      });
+      const delayMap = await res.json();
+      if (!res.ok) throw new Error(delayMap.message || '延迟测试失败');
+      for (const card of document.querySelectorAll('.node-card')) {
+        if (card.dataset.group !== groupName) continue;
+        const delay = delayMap[card.dataset.node];
+        if (delay === undefined) continue;
+        const el = card.querySelector('.node-delay');
         el.textContent = `${delay} ms`;
         el.style.color = delay < 350 ? '#10b981' : '#f59e0b';
+        if (proxyState.proxies[card.dataset.node]) proxyState.proxies[card.dataset.node].history = [{ delay }];
       }
+      showNotice('延迟测试已完成。', 'success');
+    } catch (e) { showNotice(`延迟测试失败：${e.message}`); }
+  }
+
+  async function networkRequest(path, options = {}) {
+    const response = await agentFetch(`${AGENT_BASE}${path}`, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || `操作失敗 (${response.status})`);
+    return data;
+  }
+  async function restartKernel() {
+    const button = document.getElementById('restart-core-button'); button.disabled = true;
+    try { await networkRequest('/api/core/restart', { method:'POST' }); showNotice('已請求重啟內核，實時連接將自動恢復。', 'success'); }
+    catch (error) { showNotice(`重啟失敗：${error.message}`); }
+    finally { button.disabled = false; }
+  }
+  async function loadConnections() {
+    if (connectionsLoading || mutationPending) return;
+    connectionsLoading = true;
+    try { const data = await networkRequest('/api/core/connections'); connectionState = data.connections || []; renderConnections(); }
+    catch (error) { document.getElementById('connection-summary').textContent = error.message; }
+    finally { connectionsLoading = false; }
+  }
+  function tableCell(row, value) { const cell = document.createElement('td'); cell.textContent = String(value ?? ''); row.appendChild(cell); return cell; }
+  function renderConnections() {
+    const query = document.getElementById('connection-filter').value.toLowerCase();
+    const filtered = connectionState.filter(connection => JSON.stringify(connection).toLowerCase().includes(query));
+    const rows = document.getElementById('connection-rows'); rows.replaceChildren();
+    document.getElementById('connection-summary').textContent = `共 ${connectionState.length} 條，匹配 ${filtered.length} 條，顯示前 300 條`;
+    for (const connection of filtered.slice(0,300)) {
+      const row = document.createElement('tr'), meta = connection.metadata || {};
+      tableCell(row, `${meta.host || meta.destinationIP || '-'}:${meta.destinationPort || ''} ← ${meta.sourceIP || ''}:${meta.sourcePort || ''}`);
+      tableCell(row, `${meta.process || meta.processPath || '-'} / ${meta.network || ''} ${meta.type || ''}`);
+      tableCell(row, `${(connection.chains || []).join(' → ')} / ${connection.rule || ''} ${connection.rulePayload || ''}`);
+      tableCell(row, `${formatSpeed(connection.download || 0)} ↓ / ${formatSpeed(connection.upload || 0)} ↑`.replaceAll('/s',''));
+      const actions = tableCell(row, '');
+      const close = document.createElement('button'); close.className = 'btn danger'; close.textContent = '關閉'; close.onclick = () => closeConnection(connection.id); actions.appendChild(close);
+      const details = document.createElement('button'); details.className = 'btn'; details.textContent = '詳情'; details.onclick = () => { document.getElementById('connection-details').textContent = JSON.stringify(connection,null,2); }; actions.appendChild(details);
+      rows.appendChild(row);
     }
+  }
+  async function closeConnection(id) {
+    try { await networkRequest('/api/core/connections' + (id ? '/' + encodeURIComponent(id) : ''), { method:'DELETE' }); await loadConnections(); }
+    catch (error) { showNotice(`關閉連接失敗：${error.message}`); }
+  }
+  async function queryDNS() {
+    const name = document.getElementById('dns-name').value.trim(), type = document.getElementById('dns-type').value;
+    if (!name) return showNotice('請輸入查詢域名');
+    const button = document.getElementById('dns-query-button'); button.disabled = true;
+    try { const data = await networkRequest(`/api/core/dns/query?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`); document.getElementById('dns-result').textContent = JSON.stringify(data,null,2); }
+    catch (error) { document.getElementById('dns-result').textContent = error.message; }
+    finally { button.disabled = false; await loadDNSRecords(); }
+  }
+  async function loadDNSRecords() {
+    if (dnsLoading || mutationPending) return;
+    dnsLoading = true;
+    try {
+      const data = await networkRequest('/api/core/dns/records');
+      document.getElementById('dns-record-status').textContent = `${data.scope}；最多 ${data.limit} 條。${data.capture_error || ''}`;
+      const rows = document.getElementById('dns-record-rows'); rows.replaceChildren();
+      for (const record of [...(data.records || [])].reverse()) {
+        const row = document.createElement('tr'); tableCell(row,new Date(record.at).toLocaleTimeString()); tableCell(row,record.source === 'manual' ? '手動查詢' : '內核 DNS 日誌');
+        tableCell(row,record.payload || `${record.name || ''} ${record.type || ''} ${record.error || JSON.stringify(record.result || {})}`); rows.appendChild(row);
+      }
+    } catch (error) { document.getElementById('dns-record-status').textContent = error.message; }
+    finally { dnsLoading = false; }
+  }
+  async function clearDNSRecords() {
+    try { await networkRequest('/api/core/dns/records', { method:'DELETE' }); await loadDNSRecords(); }
+    catch (error) { showNotice(error.message); }
   }
 
   // 日誌 WebSocket
+  function openMihomoWebSocket(path) {
+    const separator = path.includes('?') ? '&' : '?';
+    const url = `ws://127.0.0.1:9090${path}${separator}token=${encodeURIComponent(mihomoController.secret)}`;
+    try {
+      // Chrome 154+ 支持对 WebSocket 声明目标地址空间；旧版仍能根据 loopback IP 判断。
+      return new WebSocket(url, { targetAddressSpace: 'loopback' });
+    } catch (e) {
+      return new WebSocket(url);
+    }
+  }
+
+  function scheduleMihomoSocketReconnect() {
+    if (!mihomoController || mihomoSocketReconnectTimer !== null) return;
+    mihomoSocketReconnectTimer = setTimeout(() => {
+      mihomoSocketReconnectTimer = null;
+      connectLogs();
+      connectMemory();
+      connectTraffic();
+    }, 1500);
+  }
+
+  function reportMihomoSocketDisconnect() {
+    const now = Date.now();
+    if (now - lastMihomoSocketNotice < 30000) return;
+    lastMihomoSocketNotice = now;
+    showNotice('mihomo 实时连接中断，正在重新连接。');
+  }
+
   function connectLogs() {
     if (!mihomoController || logsWs) return;
     try {
-      logsWs = new WebSocket(`ws://127.0.0.1:9090/logs?token=${encodeURIComponent(mihomoController.secret)}&level=info`);
+      const socket = openMihomoWebSocket('/logs?level=info');
+      logsWs = socket;
       const box = document.getElementById('log-console');
-      logsWs.onmessage = (e) => {
+      socket.onmessage = (e) => {
         const log = JSON.parse(e.data);
         const row = document.createElement('div');
         row.className = 'log-line';
-        row.innerHTML = `<span class="log-${log.type}">[${log.type.toUpperCase()}]</span> <span>${log.payload}</span>`;
+        const level = document.createElement('span');
+        level.className = `log-${String(log.type || 'info').toLowerCase()}`;
+        level.textContent = `[${String(log.type || 'info').toUpperCase()}]`;
+        const payload = document.createElement('span');
+        payload.textContent = String(log.payload || '');
+        row.append(level, payload);
         box.appendChild(row);
         if (box.children.length > 200) box.removeChild(box.children[0]);
         box.scrollTop = box.scrollHeight;
       };
-      logsWs.onclose = () => { logsWs = null; };
-    } catch (e) {}
+      socket.onclose = () => {
+        if (logsWs === socket) logsWs = null;
+        reportMihomoSocketDisconnect();
+        scheduleMihomoSocketReconnect();
+      };
+      socket.onerror = () => {};
+    } catch (e) {
+      logsWs = null;
+      reportMihomoSocketDisconnect();
+      scheduleMihomoSocketReconnect();
+    }
   }
 
   // 升級檢測
   async function checkGitHubRelease() {
     document.getElementById('latest-tag-text').textContent = '檢測中...';
     try {
-      const res = await fetch(`${AGENT_BASE}/api/agent/check-update`);
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/check-update`);
       const d = await res.json();
       if (d.success) {
         document.getElementById('latest-tag-text').textContent = d.tag;
         document.getElementById('detected-target').textContent = `${d.os}-${d.arch}`;
         latestDownloadUrl = d.download_url;
       }
-    } catch (e) {}
+    } catch (e) { showNotice(`检查更新失败：${e.message}`); }
   }
 
   async function startManualUpgrade() {
-    alert('已開始自動下載適配架構的內核，完成後熱重啟...');
-    const res = await fetch(`${AGENT_BASE}/api/agent/upgrade`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ download_url: latestDownloadUrl, is_silent: false })
-    });
-    const d = await res.json();
-    alert(d.message);
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_silent: false })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || '内核更新失败');
+      showNotice(d.message || '已提交内核更新。', 'success');
+    } catch (e) { showNotice(`内核更新失败：${e.message}`); }
   }
 
   async function startSilentDownload() {
-    alert('已啟動後台靜默下載至 update.pack，在下次冷啟動或退出時自動生效！');
-    const res = await fetch(`${AGENT_BASE}/api/agent/upgrade`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ download_url: latestDownloadUrl, is_silent: true })
-    });
-    const d = await res.json();
-    alert(d.message);
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/agent/upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_silent: true })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || '静默更新失败');
+      showNotice(d.message || '已提交静默更新。', 'success');
+    } catch (e) { showNotice(`静默更新失败：${e.message}`); }
   }
 
   async function fetchCoreVersion() {
     if (!mihomoController) return;
     try {
-      const res = await fetch(`${mihomoController.api_base}/version`, {
+      const res = await agentFetch(`${mihomoController.api_base}/version`, {
         headers: { 'Authorization': `Bearer ${mihomoController.secret}` }
       });
       const data = await res.json();
       document.getElementById('core-ver-text').textContent = data.version || '未知';
-    } catch (e) {}
+    } catch (e) { showNotice(`读取 mihomo 版本失败：${e.message}`); }
   }
 
   function connectMemory() {
     if (!mihomoController || memoryWs) return;
     try {
-      memoryWs = new WebSocket(`ws://127.0.0.1:9090/memory?token=${encodeURIComponent(mihomoController.secret)}`);
-      memoryWs.onmessage = (e) => {
+      const socket = openMihomoWebSocket('/memory');
+      memoryWs = socket;
+      socket.onmessage = (e) => {
         const d = JSON.parse(e.data);
         if (typeof d.inuse === 'number') {
           document.getElementById('mem-val').textContent = (d.inuse / 1024 / 1024).toFixed(1);
         }
       };
-      memoryWs.onclose = () => { memoryWs = null; };
-    } catch (e) {}
+      socket.onclose = () => {
+        if (memoryWs === socket) memoryWs = null;
+        reportMihomoSocketDisconnect();
+        scheduleMihomoSocketReconnect();
+      };
+      socket.onerror = () => {};
+    } catch (e) {
+      memoryWs = null;
+      reportMihomoSocketDisconnect();
+      scheduleMihomoSocketReconnect();
+    }
   }
 
   function connectTraffic() {
     if (!mihomoController || trafficWs) return;
     try {
-      trafficWs = new WebSocket(`ws://127.0.0.1:9090/traffic?token=${encodeURIComponent(mihomoController.secret)}`);
-      trafficWs.onmessage = (e) => {
+      const socket = openMihomoWebSocket('/traffic');
+      trafficWs = socket;
+      socket.onmessage = (e) => {
         const d = JSON.parse(e.data);
         document.getElementById('speed-down').textContent = formatSpeed(d.down) + ' ↓';
         document.getElementById('speed-up').textContent = formatSpeed(d.up) + ' ↑';
       };
-      trafficWs.onclose = () => { trafficWs = null; };
-    } catch (e) {}
+      socket.onclose = () => {
+        if (trafficWs === socket) trafficWs = null;
+        reportMihomoSocketDisconnect();
+        scheduleMihomoSocketReconnect();
+      };
+      socket.onerror = () => {};
+    } catch (e) {
+      trafficWs = null;
+      reportMihomoSocketDisconnect();
+      scheduleMihomoSocketReconnect();
+    }
   }
 
   function formatSpeed(b) {
@@ -711,34 +1295,39 @@
   }
 
   function switchTab(t) {
-    ['dash', 'nodes', 'settings', 'ota', 'sub', 'logs'].forEach(tab => {
+    ['dash', 'nodes', 'settings', 'ota', 'sub', 'logs', 'connections', 'dns'].forEach(tab => {
       document.getElementById(`tab-btn-${tab}`).className = (t === tab) ? 'nav-btn active' : 'nav-btn';
       document.getElementById(`tab-${tab}`).style.display = (t === tab) ? 'flex' : 'none';
     });
-    if (t === 'nodes') loadProxyGroups();
+    if (t === 'nodes') return loadProxyGroups();
     if (t === 'ota') { fetchCoreVersion(); checkGitHubRelease(); }
+    if (t === 'connections') return loadConnections();
+    if (t === 'dns') return loadDNSRecords();
   }
 
   async function pushSubUrl() {
     const url = document.getElementById('sub-url-input').value.trim();
-    if (!url) return alert('請輸入 URL');
-    const res = await fetch(`${AGENT_BASE}/api/subscription/url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
-    const d = await res.json();
-    alert(d.message);
-  }
-
-  async function exitClient() {
-    if (!confirm('確定要退出 ReiaClash 並清理網絡配置嗎？')) return;
-    await fetch(`${AGENT_BASE}/api/agent/exit`, { method: 'POST' });
-    document.body.innerHTML = '<div style="color:white;text-align:center;padding:100px;"><h1>ReiaClash 已退出</h1><p>網絡代理已徹底清除並復原。</p></div>';
+    if (!url) return showNotice('请输入订阅 URL。');
+    try {
+      const res = await agentFetch(`${AGENT_BASE}/api/subscription/url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || '订阅载入失败');
+      showNotice(d.message || '订阅已载入。', 'success');
+    } catch (e) { showNotice(`订阅载入失败：${e.message}`); }
   }
 
   init();
-  setInterval(syncRealStatus, 1500);
+  setInterval(scanAgent, 5000);
+  setInterval(() => { if (mihomoController) { syncRealStatus(); pollAgentEvents(); } }, 5000);
+  setInterval(() => {
+    if (!mihomoController || document.hidden) return;
+    if (document.getElementById('tab-connections').style.display === 'flex') loadConnections();
+    if (document.getElementById('tab-dns').style.display === 'flex') loadDNSRecords();
+  }, 2000);
 </script>
 </body>
 </html>

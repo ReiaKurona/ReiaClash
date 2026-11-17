@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReiaClash 前端接入示例</title>
+<style>
+  body { max-width: 760px; margin: 40px auto; padding: 0 20px; font: 16px/1.7 system-ui; }
+  button, select { padding: 8px 12px; margin: 5px 5px 5px 0; }
+  pre { background: #f2f4f7; padding: 16px; white-space: pre-wrap; }
+  #message { min-height: 2em; }
+</style>
+<h1>ReiaClash 本机控制</h1>
+<p>将本页和 reia-client.mjs 一起部署到站点，通过浏览器连接用户本机客户端。</p>
+<button id="connect">连接本机</button>
+<span id="connection" role="status">正在查找客户端…</span>
+<p>
+  <button id="enable" data-action disabled>开启代理</button>
+  <button id="disable" data-action disabled>暂停代理</button>
+  <label>模式 <select id="mode" data-action disabled>
+    <option value="rule">规则</option><option value="global">全局</option><option value="direct">直连</option>
+  </select></label>
+  <button id="restart" data-action disabled>重启内核</button>
+</p>
+<p id="message" role="status"></p>
+<pre id="status">尚未获取状态</pre>
+<script type="module">
+  import { ReiaClient } from './reia-client.mjs';
+  const client = new ReiaClient();
+  const lifetime = new AbortController();
+  const $ = id => document.getElementById(id);
+  let busy = false, refreshing = false, disposed = false;
+  function controls() {
+    document.querySelectorAll('[data-action]').forEach(el => { el.disabled = busy || !client.connected; });
+  }
+  async function refresh() {
+    if (disposed || refreshing || busy || !client.connected) return;
+    refreshing = true;
+    try {
+      const state = await client.status({ signal: lifetime.signal });
+      if (disposed || busy) return;
+      $('mode').value = state.settings.outbound_mode;
+      $('status').textContent = JSON.stringify({
+        kernel_running: state.mihomo_running, proxy_active: state.is_actually_intercepting,
+        system_proxy: state.real_system_proxy, tun: state.real_tun,
+        mode: state.actual_mode, allow_lan: state.real_allow_lan, error: state.last_error || '',
+      }, null, 2);
+    } catch (error) { if (!disposed) $('message').textContent = error.message; }
+    finally { refreshing = false; }
+  }
+  async function action(operation) {
+    if (busy) return;
+    busy = true; controls(); $('message').textContent = '正在处理…';
+    try {
+      await operation();
+      $('message').textContent = '请求已完成，正在读取实际状态。';
+    } catch (error) {
+      $('message').textContent = error.message + (error.uncertain ? ' 请求可能已执行，请先检查状态。' : '');
+    } finally { busy = false; controls(); await refresh(); }
+  }
+  $('connect').onclick = async () => {
+    try {
+      await client.connect({ signal: lifetime.signal });
+      $('connection').textContent = '本机已连接'; $('message').textContent = ''; controls(); await refresh();
+    } catch (error) { $('connection').textContent = '等待本机连接'; $('message').textContent = error.message; }
+  };
+  $('enable').onclick = () => action(() => client.setEnabled(true, { signal: lifetime.signal }));
+  $('disable').onclick = () => action(() => client.setEnabled(false, { signal: lifetime.signal }));
+  $('mode').onchange = event => action(() => client.settings({ outbound_mode: event.target.value }, { signal: lifetime.signal }));
+  $('restart').onclick = () => action(() => client.restart({ signal: lifetime.signal }));
+  const stopDiscovery = client.startDiscovery(({ connected }) => {
+    $('connection').textContent = connected ? '本机已连接' : '请启动 ReiaClash，或点击连接本机并允许浏览器权限';
+    controls(); if (connected) void refresh();
+  });
+  const poll = setInterval(refresh, 2000);
+  addEventListener('pagehide', () => {
+    disposed = true; clearInterval(poll); lifetime.abort(); stopDiscovery();
+  }, { once: true });
+</script>
+</html>
