@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"reia-clash/internal/platform/launch"
 )
 
 // Privileged commands and the long-lived service have a distinct process role.
@@ -13,7 +15,7 @@ func Executable() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	current, err = filepath.EvalSymlinks(current)
+	current, err = launch.ResolveExecutable(current)
 	if err != nil {
 		return "", err
 	}

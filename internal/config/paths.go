@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+
+	"reia-clash/internal/platform/launch"
 )
 
 // Paths 把运行文件放到用户配置目录，避免将配置或密钥写回安装目录。
@@ -21,7 +23,7 @@ func MihomoDataDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	executable, err = filepath.EvalSymlinks(executable)
+	executable, err = launch.ResolveExecutable(executable)
 	if err != nil {
 		return "", err
 	}

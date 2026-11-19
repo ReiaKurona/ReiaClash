@@ -28,21 +28,25 @@ func RegistrationStatus() Registration {
 	}
 	defer windows.CloseServiceHandle(handle)
 	name, _ := windows.UTF16PtrFromString(serviceName)
-	serviceHandle, err := windows.OpenService(handle, name, windows.SERVICE_QUERY_STATUS|windows.SERVICE_QUERY_CONFIG)
+	serviceHandle, err := windows.OpenService(handle, name, windows.SERVICE_QUERY_STATUS)
 	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 		return result
 	}
 	if err != nil {
+		result.Installed = errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE)
 		result.Error = err.Error()
 		return result
 	}
 	defer windows.CloseServiceHandle(serviceHandle)
 	result.Installed = true
-	service := &mgr.Service{Name: serviceName, Handle: serviceHandle}
-	if configuration, err := service.Config(); err == nil {
-		if args, err := windows.DecomposeCommandLine(configuration.BinaryPathName); err == nil && len(args) > 0 {
-			result.Executable = args[0]
-			result.LegacyHelper = !strings.EqualFold(filepath.Base(args[0]), "reia-service.exe")
+	if configurationHandle, err := windows.OpenService(handle, name, windows.SERVICE_QUERY_CONFIG); err == nil {
+		defer windows.CloseServiceHandle(configurationHandle)
+		service := &mgr.Service{Name: serviceName, Handle: configurationHandle}
+		if configuration, err := service.Config(); err == nil {
+			if args, err := windows.DecomposeCommandLine(configuration.BinaryPathName); err == nil && len(args) > 0 {
+				result.Executable = args[0]
+				result.LegacyHelper = !strings.EqualFold(filepath.Base(args[0]), "reia-service.exe")
+			}
 		}
 	}
 	status, err := (&mgr.Service{Name: serviceName, Handle: serviceHandle}).Query()
@@ -62,7 +66,7 @@ func InstallPrivileged(dataDir, requestedUID string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	executable, err = filepath.EvalSymlinks(executable)
+	executable, err = launch.ResolveExecutable(executable)
 	if err != nil {
 		return err
 	}

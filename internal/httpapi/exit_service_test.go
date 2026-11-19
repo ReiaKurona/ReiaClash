@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reia-clash/internal/agent"
@@ -50,5 +51,18 @@ func TestExitAPIDoesNotStopService(t *testing.T) {
 	app.Close()
 	if service.stops != 0 {
 		t.Fatal("exit API/cleanup shut down persistent service")
+	}
+}
+
+func TestFullExitAPIRejectsBrowserRequests(t *testing.T) {
+	routes := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "").routes()
+	for _, header := range []string{"Origin", "Sec-Fetch-Mode"} {
+		request := httptest.NewRequest(http.MethodPost, "/api/agent/exit/uninstall-service", nil)
+		request.Header.Set(header, "browser-present")
+		response := httptest.NewRecorder()
+		routes.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("browser request with %s returned %d", header, response.Code)
+		}
 	}
 }

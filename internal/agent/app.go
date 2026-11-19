@@ -27,6 +27,7 @@ type App struct {
 	Exit                 chan struct{}
 	exitOnce             sync.Once
 	serviceMu            sync.Mutex
+	exiting              bool
 	subscriptionMu       sync.Mutex
 	subscriptionStatusMu sync.Mutex
 	subscriptionBusy     bool
@@ -36,7 +37,6 @@ type App struct {
 	subscriptionFetch    func(context.Context, string) ([]byte, error)
 	subscriptionApply    func([]byte) error
 	services             servicePlatform
-	geoMu                sync.Mutex
 	dnsMu                sync.Mutex
 	dnsRecords           []DNSRecord
 	dnsID                uint64
@@ -209,13 +209,17 @@ func (a *App) RealStatus(ctx context.Context) Status {
 			Mode     string `json:"mode"`
 			AllowLAN bool   `json:"allow-lan"`
 			Tun      struct {
-				Enable bool `json:"enable"`
+				Enable bool   `json:"enable"`
+				Device string `json:"device"`
 			} `json:"tun"`
 		}
 		if err := a.Core.Client().GetJSON(ctx, "/configs", &coreConfig); err == nil {
 			status.ActualMode = coreConfig.Mode
 			status.RealAllowLAN = coreConfig.AllowLAN
 			status.RealTun = settings.Enabled && coreConfig.Tun.Enable
+			if status.RealTun {
+				status.RealTunDevice = coreConfig.Tun.Device
+			}
 		}
 	}
 	status.IsActuallyIntercepting = running && (status.RealSystemProxy || status.RealTun)

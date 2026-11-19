@@ -141,3 +141,43 @@ func TestCancelledUninstallKeepsServiceAttached(t *testing.T) {
 		t.Fatal("cancelled uninstall detached/stopped the active service")
 	}
 }
+
+func TestDesktopFullExitUninstallsWithoutStartingLocalKernel(t *testing.T) {
+	app := serviceTestApp(t)
+	platform := &servicePlatformFake{installed: true}
+	service := &ownedService{}
+	app.services = platform
+	app.Core.SetLifecycle(service)
+	if _, err := app.Prefs.Update(func(s *config.Settings) error { s.Enabled, s.UseTun = true, true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	background, err := app.PrepareDesktopExit(t.Context(), false)
+	if err != nil || !background || platform.uninstalls != 0 || service.stops != 0 {
+		t.Fatalf("background exit touched the service: background=%t, err=%v, uninstalls=%d, stops=%d", background, err, platform.uninstalls, service.stops)
+	}
+	background, err = app.PrepareDesktopExit(t.Context(), true)
+	if err != nil || background || platform.uninstalls != 1 || app.Core.UsesExternalLifecycle() || app.Core.SupervisorStarted() {
+		t.Fatalf("full exit did not end service mode cleanly: background=%t, err=%v, uninstalls=%d", background, err, platform.uninstalls)
+	}
+	if state := app.Prefs.Snapshot(); state.Enabled || state.UseTun {
+		t.Fatal("full exit left privileged TUN configured")
+	}
+	if err := app.SetCoreService(t.Context(), true); err == nil {
+		t.Fatal("accepted a service start after committing to exit")
+	}
+}
+
+func TestDesktopFullExitLeavesServiceOnCancelOrFailedRemoval(t *testing.T) {
+	for _, platform := range []*servicePlatformFake{{installed: true, failure: errors.New("authorization cancelled")}, {installed: true, keepInstalled: true}} {
+		app := serviceTestApp(t)
+		service := &ownedService{}
+		app.services = platform
+		app.Core.SetLifecycle(service)
+		if _, err := app.PrepareDesktopExit(t.Context(), true); err == nil {
+			t.Fatal("failed service removal reported as successful exit")
+		}
+		if app.exiting || !app.Core.UsesExternalLifecycle() || app.Core.SupervisorStarted() || service.stops != 0 {
+			t.Fatal("failed service removal changed lifecycle or quit the Agent")
+		}
+	}
+}

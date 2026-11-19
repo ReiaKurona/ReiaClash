@@ -9,8 +9,8 @@ import (
 // SetGeoLowMemory updates only the managed loader. Restarting applies it to
 // both the local supervisor and the privileged helper, including when paused.
 func (a *App) SetGeoLowMemory(ctx context.Context, enabled bool) (bool, error) {
-	a.geoMu.Lock()
-	defer a.geoMu.Unlock()
+	a.serviceMu.Lock()
+	defer a.serviceMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}

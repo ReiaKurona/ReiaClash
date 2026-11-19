@@ -107,10 +107,11 @@ func (a *App) updateSubscription(ctx context.Context, rawURL string, replace boo
 		// Service switching and background refresh must not overlap the handover.
 		a.serviceMu.Lock()
 		apply := a.subscriptionApply
-		if apply == nil {
-			apply = a.Core.ImportProfile
+		if apply != nil {
+			err = apply(profile)
+		} else {
+			err = a.Core.ImportProfile(ctx, profile)
 		}
-		err = apply(profile)
 		a.serviceMu.Unlock()
 		if err != nil {
 			return err

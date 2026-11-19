@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,22 +13,51 @@ import (
 	"time"
 )
 
-func (m *Manager) ImportProfile(profile []byte) error {
+func (m *Manager) ImportProfile(ctx context.Context, profile []byte) error {
 	if m.BinaryPath() == "" {
 		return fmt.Errorf("尚未安装 mihomo 内核，暂时不能校验并载入订阅")
 	}
-	if err := m.PersistProfile(profile); err != nil {
-		return err
-	}
-	return m.Restart()
-}
-
-// PersistRuntimeConfig only rewrites agent-owned settings. Existing profiles
-// were validated on import; a mode/LAN change must not download Geo assets.
-func (m *Manager) PersistRuntimeConfig(profile []byte) error {
 	m.profileMu.Lock()
 	defer m.profileMu.Unlock()
-	return m.persistRuntimeConfig(profile)
+	profilePath := filepath.Join(m.dataDir, "profile.yaml")
+	oldProfile, err := os.ReadFile(profilePath)
+	if err != nil {
+		return err
+	}
+	oldRuntime, err := os.ReadFile(m.configPath)
+	if err != nil {
+		return err
+	}
+	client := m.Client()
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	_, status, probeErr := client.Do(probe, http.MethodGet, "/version", nil)
+	cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if probeErr != nil && status != 0 {
+		return probeErr
+	}
+	if err := m.persistProfile(profile, probeErr != nil); err != nil {
+		return err
+	}
+	if probeErr != nil {
+		err = m.Restart()
+	} else {
+		_, status, err = client.Do(ctx, http.MethodPut, "/configs?force=true", map[string]string{})
+	}
+	if err == nil {
+		return nil
+	}
+	profileErr := atomicWrite(profilePath, oldProfile)
+	runtimeErr := atomicWrite(m.configPath, oldRuntime)
+	if probeErr == nil && status == 0 && runtimeErr == nil {
+		// A transport error can occur after the controller has started applying the file.
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 12*time.Second)
+		defer cancel()
+		_, _, runtimeErr = client.Do(recovery, http.MethodPut, "/configs?force=true", map[string]string{})
+	}
+	return errors.Join(err, profileErr, runtimeErr)
 }
 
 func (m *Manager) persistRuntimeConfig(profile []byte) error {
@@ -50,31 +80,15 @@ func (m *Manager) PersistCurrentRuntimeConfig() error {
 	return m.persistRuntimeConfig(profile)
 }
 
-func (m *Manager) ReloadProfile() error {
-	if m.BinaryPath() == "" {
-		return fmt.Errorf("尚未安装 mihomo 内核，暂时不能校验并载入订阅")
-	}
-	m.profileMu.Lock()
-	profile, err := os.ReadFile(filepath.Join(m.dataDir, "profile.yaml"))
-	if err == nil {
-		err = m.persistProfile(profile)
-	}
-	m.profileMu.Unlock()
-	if err != nil {
-		return err
-	}
-	return m.Restart()
-}
-
 // PersistProfile 校验并保存配置，但不重启 mihomo。
 // 出站模式等热设置会同时更新配置文件，保证下次启动仍使用当前模式。
 func (m *Manager) PersistProfile(profile []byte) error {
 	m.profileMu.Lock()
 	defer m.profileMu.Unlock()
-	return m.persistProfile(profile)
+	return m.persistProfile(profile, true)
 }
 
-func (m *Manager) persistProfile(profile []byte) error {
+func (m *Manager) persistProfile(profile []byte, validate bool) error {
 	profilePath := filepath.Join(m.dataDir, "profile.yaml")
 	previousProfile, err := os.ReadFile(profilePath)
 	if err != nil {
@@ -90,7 +104,7 @@ func (m *Manager) persistProfile(profile []byte) error {
 	if err := atomicWrite(temp, rendered); err != nil {
 		return err
 	}
-	if binary := m.BinaryPath(); binary != "" {
+	if binary := m.BinaryPath(); validate && binary != "" {
 		if err := m.validateWith(binary, temp); err != nil {
 			_ = os.Remove(temp)
 			return err

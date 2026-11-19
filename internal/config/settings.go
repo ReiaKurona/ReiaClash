@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sync"
 )
@@ -16,6 +17,7 @@ type Settings struct {
 	UseTun                bool   `json:"use_tun"`
 	TunAuthorized         bool   `json:"-"`
 	TunStack              string `json:"tun_stack"`
+	TunDevice             string `json:"tun_device"`
 	AllowLAN              bool   `json:"allow_lan"`
 	GeoLowMemory          bool   `json:"geo_low_memory"`
 	AutoStart             bool   `json:"autostart_enabled"`
@@ -31,9 +33,9 @@ type Settings struct {
 func Defaults() Settings {
 	return Settings{
 		Enabled:             false, // 首页总开关默认关闭；首次启动绝不默认开启系统代理或接管流量
-		UseSystemProxy:      true,  // 偏好：首页总开关打开时默认采用系统代理
-		UseTun:              false,
-		TunStack:            "mixed",
+		UseTun:              true,
+		TunStack:            "mips",
+		TunDevice:           defaultTunDevice(),
 		GeoLowMemory:        true,
 		UpdateIntervalHours: 24,
 		OutboundMode:        "rule",
@@ -54,6 +56,8 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	if err == nil {
+		// Existing installations may already have a live adapter with the kernel's default name.
+		s.data.TunDevice = ""
 		if err := json.Unmarshal(bytes, &s.data); err != nil {
 			return nil, err
 		}
@@ -66,10 +70,33 @@ func ValidTunStack(stack string) bool {
 	return stack == "mixed" || stack == "gvisor" || stack == "system" || stack == "mips"
 }
 
+var reiaTunName = regexp.MustCompile(`^Reia[A-Za-z0-9_-]{0,11}$`)
+var macTunName = regexp.MustCompile(`^utun(0|[1-9][0-9]{0,3})$`)
+
+func defaultTunDevice() string {
+	if runtime.GOOS == "darwin" {
+		return ""
+	}
+	return "ReiaClash"
+}
+
+func ValidTunDevice(name string) bool {
+	if name == "" {
+		return true
+	}
+	if runtime.GOOS == "darwin" {
+		return macTunName.MatchString(name)
+	}
+	return reiaTunName.MatchString(name)
+}
+
 func (s *Store) applyDefaults() {
 	defaults := Defaults()
 	if !ValidTunStack(s.data.TunStack) {
 		s.data.TunStack = defaults.TunStack
+	}
+	if !ValidTunDevice(s.data.TunDevice) {
+		s.data.TunDevice = ""
 	}
 	if s.data.UpdateIntervalHours < 1 || s.data.UpdateIntervalHours > 168 {
 		s.data.UpdateIntervalHours = defaults.UpdateIntervalHours
@@ -94,6 +121,7 @@ func (s *Store) Reload() error {
 		return err
 	}
 	next := Defaults()
+	next.TunDevice = ""
 	if err := json.Unmarshal(data, &next); err != nil {
 		return err
 	}

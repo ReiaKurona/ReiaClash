@@ -15,7 +15,7 @@ func (a *App) requireTunAuthority(ctx context.Context) error {
 	}
 	if err := privilege.RequireTunPrivilege(); err != nil {
 		a.AddEvent("info", "TUN 需要网络管理权限，请在系统授权窗口中确认安装内核服务")
-		if installErr := a.SetCoreService(ctx, true); installErr != nil {
+		if installErr := a.setCoreService(ctx, true); installErr != nil {
 			return fmt.Errorf("TUN 系统授权失败: %w", installErr)
 		}
 	}

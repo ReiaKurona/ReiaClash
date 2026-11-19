@@ -4,12 +4,13 @@ package coreservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
+
+	"golang.org/x/sys/windows"
 
 	"reia-clash/internal/platform/launch"
 )
@@ -19,77 +20,54 @@ const taskName = "ReiaClashCore"
 // Supported 表示支持 UAC 授权安装 Windows SCM 系统服务。
 func Supported() bool { return true }
 
-// RequestInstall 请求 Windows UAC 管理员提权，并安装/启动 SCM 服务。
+// RequestInstall requests normal Windows UAC consent for the service helper.
 func RequestInstall(ctx context.Context, dataDir string) error {
+	return requestWindowsService(ctx, dataDir, "--install-core-service", "安装")
+}
+
+func RequestUninstall(ctx context.Context, dataDir string) error {
+	return requestWindowsService(ctx, dataDir, "--uninstall-core-service", "移除")
+}
+
+func requestWindowsService(ctx context.Context, dataDir, operation, label string) error {
 	executable, err := Executable()
 	if err != nil {
 		return err
 	}
-	executable, err = filepath.EvalSymlinks(executable)
+	executable, err = launch.ResolveExecutable(executable)
 	if err != nil {
-		return err
+		return fmt.Errorf("无法访问 Windows 服务程序 %q: %w", executable, err)
 	}
 	absDataDir, err := filepath.Abs(dataDir)
 	if err != nil {
 		return err
 	}
 
-	// 使用 PowerShell Start-Process -Verb RunAs 触发原生 Windows UAC 提权窗口
-	psScript := fmt.Sprintf(
-		`$ErrorActionPreference = 'Stop'; $proc = Start-Process -FilePath '%s' -ArgumentList '--install-core-service', '--data-dir', '"%s"' -WindowStyle Hidden -Verb RunAs -PassThru -Wait; exit $proc.ExitCode`,
-		strings.ReplaceAll(executable, "'", "''"),
-		strings.ReplaceAll(absDataDir, "'", "''"),
-	)
-	callCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(callCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", psScript)
-	launch.HideCommand(cmd)
-	output, err := cmd.CombinedOutput()
+	handle, err := startElevated(ctx, executable, []string{operation, "--data-dir", absDataDir})
 	if err != nil {
-		msg := strings.TrimSpace(string(output))
-		if detail, readErr := os.ReadFile(filepath.Join(absDataDir, "core-service-operation.log")); readErr == nil && len(detail) > 0 {
-			msg = strings.TrimSpace(string(detail))
+		switch {
+		case errors.Is(err, windows.ERROR_CANCELLED):
+			return fmt.Errorf("已取消 Windows 管理员授权: %w", err)
+		case errors.Is(err, windows.ERROR_ACCESS_DENIED), errors.Is(err, windows.ERROR_ACCESS_DISABLED_BY_POLICY),
+			errors.Is(err, windows.ERROR_ELEVATION_REQUIRED), errors.Is(err, windows.ERROR_SERVICE_DISABLED):
+			return fmt.Errorf("Windows 拒绝启动管理员授权程序，请检查 UAC、Application Information 服务或组策略: %w", err)
+		default:
+			return fmt.Errorf("无法启动 Windows 管理员授权程序: %w", err)
 		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("Windows 特权服务提权安装失败：%s", msg)
 	}
-	return nil
-}
-
-// RequestUninstall 请求 Windows UAC 管理员提权，并移除特权内核服务。
-func RequestUninstall(ctx context.Context, dataDir string) error {
-	executable, err := Executable()
+	defer windows.CloseHandle(handle)
+	code, err := waitElevated(handle)
 	if err != nil {
-		return err
+		return fmt.Errorf("等待 Windows 特权服务%s完成失败: %w", label, err)
 	}
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		return err
+	if code == 0 {
+		return nil
 	}
-
-	psScript := fmt.Sprintf(
-		`$ErrorActionPreference = 'Stop'; $proc = Start-Process -FilePath '%s' -ArgumentList '--uninstall-core-service', '--data-dir', '"%s"' -WindowStyle Hidden -Verb RunAs -PassThru -Wait; exit $proc.ExitCode`,
-		strings.ReplaceAll(executable, "'", "''"),
-		strings.ReplaceAll(dataDir, "'", "''"),
-	)
-	callCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(callCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", psScript)
-	launch.HideCommand(cmd)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(output))
-		if detail, readErr := os.ReadFile(filepath.Join(dataDir, "core-service-operation.log")); readErr == nil && len(detail) > 0 {
-			msg = strings.TrimSpace(string(detail))
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("Windows 特权服务提权移除失败：%s", msg)
+	detail, _ := os.ReadFile(filepath.Join(absDataDir, "core-service-operation.log"))
+	if message := strings.TrimSpace(string(detail)); message != "" {
+		return fmt.Errorf("Windows 特权服务%s失败: %s", label, message)
 	}
-	return nil
+	return fmt.Errorf("Windows 特权服务%s失败，安装器退出码 %d", label, code)
 }
 
 // uninstallLegacyTask is only used to migrate/remove pre-SCM installations.

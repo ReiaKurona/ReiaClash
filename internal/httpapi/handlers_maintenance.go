@@ -30,21 +30,26 @@ func (s *Server) restartCore(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) exitAgent(w http.ResponseWriter, r *http.Request) {
-	if s.app.Core.UsesExternalLifecycle() {
-		// The tray may exit, but the user-session API must remain available
-		// for pairing, settings and user-scoped system proxy operations.
-		writeJSON(w, http.StatusAccepted, map[string]any{"success": true, "background": true, "message": "已转入后台，面板仍可连接"})
+	s.finishExit(w, r, false)
+}
+
+func (s *Server) uninstallServiceAndExit(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Mode") != "" {
+		writeError(w, http.StatusForbidden, "desktop_only", "请从桌面托盘注销服务并退出")
 		return
 	}
-	if err := s.app.PrepareExit(); err != nil {
+	s.finishExit(w, r, true)
+}
+
+func (s *Server) finishExit(w http.ResponseWriter, r *http.Request, uninstallService bool) {
+	background, err := s.app.PrepareDesktopExit(r.Context(), uninstallService)
+	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	if !s.app.Core.UsesExternalLifecycle() {
-		if err := s.app.Core.Shutdown(); err != nil {
-			writeAppError(w, err)
-			return
-		}
+	if background {
+		writeJSON(w, http.StatusAccepted, map[string]any{"success": true, "background": true, "message": "已转入后台，面板仍可连接"})
+		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"success": true, "message": "正在关闭 ReiaClash"})
 	go func() {

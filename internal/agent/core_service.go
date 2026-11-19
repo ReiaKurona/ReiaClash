@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"reia-clash/internal/config"
 
+	"reia-clash/internal/config"
 	"reia-clash/internal/mihomo"
 	"reia-clash/internal/platform/privilege"
 )
@@ -16,7 +15,13 @@ import (
 func (a *App) SetCoreService(ctx context.Context, enable bool) error {
 	a.serviceMu.Lock()
 	defer a.serviceMu.Unlock()
+	return a.setCoreService(ctx, enable)
+}
 
+func (a *App) setCoreService(ctx context.Context, enable bool) error {
+	if a.exiting {
+		return fmt.Errorf("ReiaClash 正在退出")
+	}
 	if enable == a.Core.UsesExternalLifecycle() {
 		if enable {
 			registration := a.serviceProvider().RegistrationStatus()
@@ -33,7 +38,7 @@ func (a *App) SetCoreService(ctx context.Context, enable bool) error {
 				return nil
 			}
 		}
-		return a.removeCoreService(ctx)
+		return a.removeCoreService(ctx, true)
 	}
 	if !a.serviceProvider().Supported() {
 		return fmt.Errorf("当前平台尚未提供 Mihomo 特权服务安装器")
@@ -41,12 +46,15 @@ func (a *App) SetCoreService(ctx context.Context, enable bool) error {
 	if enable {
 		return a.installCoreService(ctx)
 	}
-	return a.removeCoreService(ctx)
+	return a.removeCoreService(ctx, true)
 }
 
 func (a *App) RepairCoreService(ctx context.Context) error {
 	a.serviceMu.Lock()
 	defer a.serviceMu.Unlock()
+	if a.exiting {
+		return fmt.Errorf("ReiaClash 正在退出")
+	}
 	if !a.serviceProvider().Supported() {
 		return fmt.Errorf("当前平台不支持系统服务")
 	}
@@ -119,7 +127,7 @@ func (a *App) installCoreService(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) removeCoreService(ctx context.Context) error {
+func (a *App) removeCoreService(ctx context.Context, resumeLocal bool) error {
 	localStarted := !a.Core.UsesExternalLifecycle() && a.Core.SupervisorStarted()
 	if localStarted {
 		if err := a.Core.Shutdown(); err != nil {
@@ -150,12 +158,11 @@ func (a *App) removeCoreService(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	profile, err := os.ReadFile(a.Paths.Profile)
-	if err != nil {
+	if err := a.Core.PersistCurrentRuntimeConfig(); err != nil {
 		return err
 	}
-	if err := a.Core.PersistRuntimeConfig(profile); err != nil {
-		return err
+	if !resumeLocal {
+		return nil
 	}
 	if err := a.Core.Start(a.context()); err != nil {
 		return err

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,12 +67,22 @@ func (s *Server) handshake(w http.ResponseWriter, r *http.Request) {
 			"api_base": s.app.Core.APIBase(),
 			"secret":   s.app.Core.Secret(),
 		},
-		"features": []string{"rest", "websocket", "subscription", "subscription_refresh", "autostart", "panel_pairing", "agent_maintenance"},
+		"features": []string{"rest", "websocket", "subscription", "subscription_refresh", "autostart", "panel_pairing", "agent_maintenance", "outbound_ip", "outbound_ip_trace", "tun_device"},
 	})
 }
 
 func (s *Server) realStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.app.RealStatus(r.Context()))
+}
+
+func (s *Server) outboundIP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	result, err := s.app.OutboundIP(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "outbound_ip_unavailable", "暂时无法查询公网出口 IP")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +100,7 @@ func (s *Server) systemStatus(w http.ResponseWriter, r *http.Request) {
 		"core_service_registration": registration,
 		"autostart_enabled":         autostart.Enabled(""),
 		"core_service_supported":    coreservice.Supported(),
+		"core_service_delegated":    s.app.Core.UsesExternalLifecycle(),
 		"core_service_enabled":      registration.Installed && s.app.Core.UsesExternalLifecycle(),
 		"core_service_ready":        registration.Running && running,
 		"core_service_error":        serviceError,
@@ -133,6 +145,10 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.app.UpdateSettings(r.Context(), patch); err != nil {
+		if errors.Is(err, agent.ErrInvalidTunDevice) {
+			writeError(w, http.StatusBadRequest, "invalid_tun_device", err.Error())
+			return
+		}
 		writeAppError(w, err)
 		return
 	}

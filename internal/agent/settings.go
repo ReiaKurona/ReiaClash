@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"reia-clash/internal/config"
@@ -14,6 +16,7 @@ type SettingsPatch struct {
 	UseSystemProxy      *bool   `json:"use_system_proxy"`
 	UseTun              *bool   `json:"use_tun"`
 	TunStack            *string `json:"tun_stack"`
+	TunDevice           *string `json:"tun_device"`
 	AllowLAN            *bool   `json:"allow_lan"`
 	AutoUpdateEnabled   *bool   `json:"auto_update_enabled"`
 	UpdateIntervalHours *int    `json:"update_interval_hours"`
@@ -23,15 +26,17 @@ type SettingsPatch struct {
 // A failed proxy setting must not roll back a newer subscription received
 // independently while it was applying to the kernel.
 func restoreManagedPreferences(current *config.Settings, previous config.Settings) {
-	previous.SubscriptionURL = current.SubscriptionURL
-	previous.SubscriptionUpdatedAt = current.SubscriptionUpdatedAt
-	*current = previous
+	current.Enabled, current.UseSystemProxy, current.UseTun = previous.Enabled, previous.UseSystemProxy, previous.UseTun
+	current.TunStack, current.TunDevice, current.AllowLAN = previous.TunStack, previous.TunDevice, previous.AllowLAN
+	current.OutboundMode = previous.OutboundMode
+	current.AutoUpdateEnabled, current.UpdateIntervalHours = previous.AutoUpdateEnabled, previous.UpdateIntervalHours
 }
 
 type Status struct {
 	IsActuallyIntercepting bool            `json:"is_actually_intercepting"`
 	RealSystemProxy        bool            `json:"real_system_proxy"`
 	RealTun                bool            `json:"real_tun"`
+	RealTunDevice          string          `json:"real_tun_device,omitempty"`
 	MihomoRunning          bool            `json:"mihomo_running"`
 	ActualMode             string          `json:"actual_mode,omitempty"`
 	RealAllowLAN           bool            `json:"real_allow_lan"`
@@ -39,42 +44,26 @@ type Status struct {
 	Settings               config.Settings `json:"settings"`
 }
 
+var ErrInvalidTunDevice = errors.New("TUN 网卡名无效：Windows/Linux 使用 Reia 开头的 4–15 位字母、数字、连字符或下划线，macOS 使用 utun 加编号，留空自动选择")
+
 func (a *App) SetEnabled(ctx context.Context, enabled bool) error {
-	old := a.Prefs.Snapshot()
-	if enabled && !old.UseSystemProxy && !old.UseTun {
-		return fmt.Errorf("请先在设置中启用系统代理或 TUN，再启动流量接管")
-	}
-	if enabled && old.UseTun {
-		if err := a.requireTunAuthority(ctx); err != nil {
-			return err
+	a.serviceMu.Lock()
+	defer a.serviceMu.Unlock()
+
+	return a.changeSettings(ctx, enabled, func(settings *config.Settings) error {
+		if enabled && !settings.UseSystemProxy && !settings.UseTun {
+			return fmt.Errorf("请先在设置中启用系统代理或 TUN，再启动流量接管")
 		}
-		a.Prefs.SetRuntimeTunAuthorization(true)
-	}
-	next, err := a.Prefs.Update(func(settings *config.Settings) error {
 		settings.Enabled = enabled
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if !old.UseTun {
-		if err := a.applySystemProxy(ctx, next); err != nil {
-			_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-			return err
-		}
-		return nil
-	}
-	if err := a.applySettings(ctx, next); err != nil {
-		_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-		_ = a.applySettings(ctx, old)
-		return err
-	}
-	return nil
 }
 
 func (a *App) UpdateSettings(ctx context.Context, patch SettingsPatch) error {
-	old := a.Prefs.Snapshot()
-	next, err := a.Prefs.Update(func(settings *config.Settings) error {
+	a.serviceMu.Lock()
+	defer a.serviceMu.Unlock()
+
+	return a.changeSettings(ctx, patch.UseTun != nil && *patch.UseTun, func(settings *config.Settings) error {
 		if patch.UseSystemProxy != nil {
 			settings.UseSystemProxy = *patch.UseSystemProxy
 		}
@@ -86,6 +75,12 @@ func (a *App) UpdateSettings(ctx context.Context, patch SettingsPatch) error {
 				return fmt.Errorf("不支持的 TUN 协议栈: %s", *patch.TunStack)
 			}
 			settings.TunStack = *patch.TunStack
+		}
+		if patch.TunDevice != nil {
+			if !config.ValidTunDevice(*patch.TunDevice) {
+				return ErrInvalidTunDevice
+			}
+			settings.TunDevice = *patch.TunDevice
 		}
 		if patch.AutoUpdateEnabled != nil {
 			settings.AutoUpdateEnabled = *patch.AutoUpdateEnabled
@@ -107,127 +102,145 @@ func (a *App) UpdateSettings(ctx context.Context, patch SettingsPatch) error {
 		}
 		return nil
 	})
-	if err != nil {
+}
+
+func (a *App) changeSettings(ctx context.Context, requestTun bool, change func(*config.Settings) error) error {
+	if a.exiting {
+		return fmt.Errorf("ReiaClash 正在退出")
+	}
+	old := a.Prefs.Snapshot()
+	next := old
+	if err := change(&next); err != nil {
 		return err
 	}
-	if next.Enabled && patch.UseTun != nil && *patch.UseTun {
+	authorizeTun := requestTun && next.Enabled && next.UseTun && !old.TunAuthorized
+	if next == old && !authorizeTun {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Complete service handover before saving an enabled TUN preference.
+	if authorizeTun {
 		if err := a.requireTunAuthority(ctx); err != nil {
-			_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
 			return err
 		}
 		a.Prefs.SetRuntimeTunAuthorization(true)
 	}
-	if patch.OutboundMode != nil || patch.AllowLAN != nil {
-		if err := a.persistHotMode(ctx, old, next); err != nil {
-			return err
-		}
-	}
-	// 这些偏好不影响 mihomo YAML，因此不需要重启内核。
-	if patch.UseTun == nil && patch.TunStack == nil {
-		if patch.UseSystemProxy != nil {
-			if err := a.applySystemProxy(ctx, next); err != nil {
-				if _, restoreErr := a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil }); restoreErr != nil {
-					return fmt.Errorf("%w；恢复原设置失败: %v", err, restoreErr)
-				}
-				return err
-			}
-			return nil
-		}
-		return nil
-	}
-	// TUN preferences are dormant while interception is paused.
-	if !next.Enabled && !old.Enabled {
-		return nil
-	}
-	if err := a.applySettings(ctx, next); err != nil {
-		_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-		_ = a.applySettings(ctx, old)
+	next, err := a.Prefs.Update(change)
+	if err != nil {
 		return err
+	}
+
+	previousTun, targetTun := tunEnabled(old), tunEnabled(next)
+	modeChanged := old.OutboundMode != next.OutboundMode
+	lanChanged := old.AllowLAN != next.AllowLAN
+	tunPreferencesChanged := old.TunStack != next.TunStack || old.TunDevice != next.TunDevice
+	tunChanged := previousTun != targetTun || (targetTun && tunPreferencesChanged)
+	persistConfig := modeChanged || lanChanged || tunChanged || tunPreferencesChanged
+	proxyChanged := (old.Enabled && old.UseSystemProxy) != (next.Enabled && next.UseSystemProxy)
+	patchAttempted, proxyAttempted := false, false
+	rollback := func(cause error) error {
+		_, settingsErr := a.Prefs.Update(func(current *config.Settings) error {
+			restoreManagedPreferences(current, old)
+			return nil
+		})
+		if settingsErr != nil {
+			return errors.Join(cause, settingsErr)
+		}
+		if persistConfig {
+			cause = errors.Join(cause, a.Core.PersistCurrentRuntimeConfig())
+		}
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if patchAttempted {
+			cause = errors.Join(cause, a.patchCoreSettings(recovery, old, modeChanged, lanChanged, tunChanged))
+		}
+		if proxyAttempted {
+			cause = errors.Join(cause, a.applySystemProxy(recovery, old))
+		}
+		return cause
+	}
+	if persistConfig {
+		if err := a.Core.PersistCurrentRuntimeConfig(); err != nil {
+			return rollback(err)
+		}
+	}
+	if proxyChanged && !(next.UseSystemProxy && next.Enabled) {
+		proxyAttempted = true
+		if err := a.applySystemProxy(ctx, next); err != nil {
+			return rollback(err)
+		}
+	}
+	if modeChanged || lanChanged || tunChanged {
+		readyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		err := a.Core.WaitReady(readyCtx)
+		cancel()
+		if err != nil {
+			return rollback(fmt.Errorf("切换设置失败，mihomo 未就绪: %w", err))
+		}
+		patchAttempted = true
+		if err := a.patchCoreSettings(ctx, next, modeChanged, lanChanged, tunChanged); err != nil {
+			return rollback(err)
+		}
+	}
+	if proxyChanged && next.Enabled && next.UseSystemProxy {
+		proxyAttempted = true
+		if err := a.applySystemProxy(ctx, next); err != nil {
+			return rollback(err)
+		}
 	}
 	return nil
 }
 
-func (a *App) applySettings(ctx context.Context, settings config.Settings) error {
-	proxyEnabled := settings.Enabled && settings.UseSystemProxy
-	backupPath := filepath.Join(a.Paths.Root, "system-proxy-backup.json")
-	if !proxyEnabled && (systemproxy.Enabled() || a.hasSystemProxyBackup()) {
-		if err := systemproxy.Set(false, backupPath); err != nil {
-			return err
+func tunEnabled(settings config.Settings) bool {
+	return settings.Enabled && settings.UseTun && settings.TunAuthorized
+}
+
+func (a *App) patchCoreSettings(ctx context.Context, settings config.Settings, modeChanged, lanChanged, tunChanged bool) error {
+	payload := make(map[string]any)
+	if modeChanged {
+		if settings.OutboundMode == "global" {
+			if err := a.ensureGlobalProxy(ctx); err != nil {
+				return err
+			}
+		}
+		payload["mode"] = settings.OutboundMode
+	}
+	if lanChanged {
+		payload["allow-lan"] = settings.AllowLAN
+		payload["bind-address"] = runtimeBindAddress(settings.AllowLAN)
+	}
+	if tunChanged {
+		payload["tun"] = map[string]any{
+			"enable": tunEnabled(settings), "stack": settings.TunStack, "device": settings.TunDevice,
+			"auto-route": true, "auto-detect-interface": true,
 		}
 	}
-	if err := a.Core.ReloadProfile(); err != nil {
+	client := a.Core.Client()
+	if _, _, err := client.Do(ctx, "PATCH", "/configs", payload); err != nil {
 		return err
 	}
-	// Restart is asynchronous. Do not report success against the old controller
-	// that can still answer briefly before the supervisor replaces it.
-	readyCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	for {
+	if tunChanged {
 		var actual struct {
-			Mode     string `json:"mode"`
-			AllowLAN bool   `json:"allow-lan"`
-			Tun      struct {
-				Enable bool `json:"enable"`
+			Tun struct {
+				Enable bool   `json:"enable"`
+				Stack  string `json:"stack"`
+				Device string `json:"device"`
 			} `json:"tun"`
 		}
-		err := a.Core.Client().GetJSON(readyCtx, "/configs", &actual)
-		wantTun := settings.Enabled && settings.UseTun && a.Prefs.Snapshot().TunAuthorized
-		if err == nil && actual.Tun.Enable == wantTun && actual.AllowLAN == settings.AllowLAN && actual.Mode == settings.OutboundMode {
-			break
-		}
-		select {
-		case <-readyCtx.Done():
-			return fmt.Errorf("等待内核应用设置失败: %w", readyCtx.Err())
-		case <-time.After(150 * time.Millisecond):
-		}
-	}
-	if settings.OutboundMode == "global" {
-		if err := a.ensureGlobalProxy(ctx); err != nil {
+		if err := client.GetJSON(ctx, "/configs", &actual); err != nil {
 			return err
 		}
-	}
-	if proxyEnabled {
-		readyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		defer cancel()
-		if err := a.Core.WaitReady(readyCtx); err != nil {
-			return fmt.Errorf("mihomo 尚未就绪，系统代理未启用：%w", err)
-		}
-		if !systemproxy.Enabled() {
-			if err := systemproxy.Set(true, backupPath); err != nil {
-				return err
-			}
+		if actual.Tun.Enable != tunEnabled(settings) ||
+			(actual.Tun.Enable && (!strings.EqualFold(actual.Tun.Stack, settings.TunStack) ||
+				(settings.TunDevice != "" && actual.Tun.Device != settings.TunDevice))) {
+			return fmt.Errorf("内核未应用 TUN 设置，请检查内核版本及日志")
 		}
 	}
-	return nil
-}
-
-func (a *App) persistHotMode(ctx context.Context, old, next config.Settings) error {
-	if err := a.Core.PersistCurrentRuntimeConfig(); err != nil {
-		_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-		return err
+	if modeChanged {
+		_ = client.CloseConnections(ctx)
 	}
-	readyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	if err := a.Core.WaitReady(readyCtx); err != nil {
-		_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-		_ = a.Core.PersistCurrentRuntimeConfig()
-		return fmt.Errorf("切换设置失败，mihomo 未就绪: %w", err)
-	}
-	if next.OutboundMode == "global" {
-		if err := a.ensureGlobalProxy(ctx); err != nil {
-			_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-			_ = a.Core.PersistCurrentRuntimeConfig()
-			return err
-		}
-	}
-	if _, _, err := a.Core.Client().Do(ctx, "PATCH", "/configs", map[string]any{"mode": next.OutboundMode, "allow-lan": next.AllowLAN, "bind-address": runtimeBindAddress(next.AllowLAN)}); err != nil {
-		_, _ = a.Prefs.Update(func(settings *config.Settings) error { restoreManagedPreferences(settings, old); return nil })
-		_ = a.Core.PersistCurrentRuntimeConfig()
-		_, _, _ = a.Core.Client().Do(ctx, "PATCH", "/configs", map[string]any{"mode": old.OutboundMode, "allow-lan": old.AllowLAN, "bind-address": runtimeBindAddress(old.AllowLAN)})
-		return err
-	}
-	// 模式切换后强制断开旧连接
-	_ = a.Core.Client().CloseConnections(ctx)
 	return nil
 }
 

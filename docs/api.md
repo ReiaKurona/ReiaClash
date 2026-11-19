@@ -1,6 +1,6 @@
 # 本机 API 与 WebUI 对接
 
-更新日期：2026-11-17。以 internal/httpapi/server.go 路由和处理器为准。
+更新日期：2026-11-19。以 internal/httpapi/server.go 路由和处理器为准。
 Agent 基址是 http://127.0.0.1:25500，也提供 IPv6 loopback。控制接口不随 LAN 开关开放。
 
 前端第一次移植请先看 [嵌入与快速接入指南](frontend-integration.md)，可直接复制 [JavaScript 接入类](examples/reia-client.mjs) 和 [最小示例页面](examples/embed.html)。
@@ -52,6 +52,7 @@ secret 会交给当前网页 JavaScript。服务控制 token 不会返回给网�
 | 方法 | 路径 | 请求/主要返回 |
 | --- | --- | --- |
 | GET | /api/agent/real-status | 实际内核、系统代理、TUN、模式、LAN 与持久设置 |
+| GET | /api/agent/outbound-ip | Cloudflare Trace 观察到的公网出口。返回 `ip`、可选 `country_code` 与 Cloudflare 机房代码 `colo` |
 | GET | /api/agent/events?since=0 | 增量事件列表，since 是事件 ID |
 | GET | /api/system/status | 自启、服务注册/ready/error、settings |
 | POST | /api/agent/master | {"enable":true} 或 false，总开关 |
@@ -62,7 +63,7 @@ secret 会交给当前网页 JavaScript。服务控制 token 不会返回给网�
 
 real-status 主要字段：
 
-- is_actually_intercepting、real_system_proxy、real_tun、mihomo_running。
+- is_actually_intercepting、real_system_proxy、real_tun、mihomo_running。TUN 生效时可返回 `real_tun_device`。
 - actual_mode、real_allow_lan、last_error、settings。
 - settings.enabled 是意图；显示实际接管应结合真实状态字段。
 
@@ -73,12 +74,17 @@ settings 部分更新接受：
 | use_system_proxy | bool | 系统代理偏好 |
 | use_tun | bool | TUN 偏好，需要接管时按需授权 |
 | tun_stack | string | mixed / gvisor / system / mips |
+| tun_device | string | 网卡名。Windows/Linux 使用 `Reia` 开头的 4–15 位 ASCII 字母、数字、连字符或下划线；macOS 使用 `utun` 加 0–9999 的编号。空字符串自动选择 |
 | allow_lan | bool | 只调整代理入口，不开放控制接口 |
 | auto_update_enabled | bool | 内核自动检查/更新偏好 |
 | update_interval_hours | int | 1–168 |
 | outbound_mode | string | rule / global / direct |
 
 总开关、开机启动、服务模式、Geo loader 分别使用对应端点，不能直接把完整 settings 对象回传到部分更新接口。
+
+设置网卡名可向 `POST /api/agent/settings` 发送 `{"tun_device":"ReiaWork"}`。暂停时保存至下次启用，活动 TUN 在原内核进程中重建监听，有短暂中断的可能。非法名称返回 HTTP 400 和 `invalid_tun_device`。握手的 `tun_device` 特性表示支持此字段。
+
+`outbound_ip` 表示出口 IP API 可用，`outbound_ip_trace` 表示数据来自 `https://1.1.1.1/cdn-cgi/trace`。开启接管时，查询通过本机 Mihomo 入口，当前规则和模式仍决定出站。暂停时直接查询。查询失败返回 HTTP 502 和 `outbound_ip_unavailable`。旧 Agent 可能返回可选 `org`，Trace 版本返回可选 `colo`。
 Geo loader 开启为 memconservative，关闭为 standard；restart_requested 只表示已发出重启，不表示重启已完成。
 
 ### 状态响应示例
@@ -101,9 +107,10 @@ GET /api/agent/real-status：下面是内核运行、总开关关闭的示例，
   "real_allow_lan": false,
   "settings": {
     "enabled": false,
-    "use_system_proxy": true,
-    "use_tun": false,
-    "tun_stack": "mixed",
+    "use_system_proxy": false,
+    "use_tun": true,
+    "tun_stack": "mips",
+    "tun_device": "ReiaClash",
     "allow_lan": false,
     "geo_low_memory": true,
     "autostart_enabled": false,
@@ -146,6 +153,7 @@ Linux 在授权前检查用户路径和应用旁 data 的读写能力；当前�
 | --- | --- |
 | core_service_supported | 当前构建是否有安装器，不保证系统依赖已就绪 |
 | core_service_enabled | 该状态接口中为实际已注册且 Agent 已委托 |
+| core_service_delegated | Agent 当前使用服务委托，包括待修复或旧版委托，配合实际注册状态使用 |
 | core_service_ready | OS 报运行且内核服务状态确认核心运行 |
 | core_service_error | 服务委托/内核的具体错误 |
 | core_service_registration | backend、name、installed、running、executable、legacy_helper、error |
@@ -165,6 +173,8 @@ POST /api/agent/exit：
 
 该 API 自身不会远程移除托盘。只有托盘菜单自己的退出流程会在收到 API 响应后退出托盘，网页直接调用不可据此宣称托盘已关闭。
 
+托盘在用户选择“注销服务并退出”后调用 `POST /api/agent/exit/uninstall-service`。接口要求确认系统服务已卸载，恢复本项目的系统代理备份，停止本地监督器并返回 HTTP 202，然后关闭 Agent。卸载失败或取消时返回错误并保留 Agent API。浏览器页面调用此端点返回 HTTP 403 和 `desktop_only`。
+
 ## 节点与订阅
 
 | 方法 | 路径 | 请求/响应 |
@@ -180,7 +190,7 @@ POST /api/agent/exit：
 订阅内容中的客户端受管字段会被覆盖，原始订阅与生成配置分别保存。
 实际订阅地址可能含凭证，不要写入接手文档或测试固定数据。
 
-`POST /api/subscription/url` 在合法新 URL 被接受后先覆盖持久化 `settings.subscription_url`，再下载/校验/应用。后续下载或校验失败保留现有配置，但旧 URL 不会恢复；后台会用新 URL 重试。内容相同且此前刷新成功时不重启内核。成功响应兼容原有 success/message；失败仍用原有错误格式。HTTP(S) 订阅受公网地址/重定向检查和 16 MiB 限制。
+`POST /api/subscription/url` 在合法新 URL 被接受后先覆盖持久化 `settings.subscription_url`，再下载、校验并应用。后续下载或校验失败保留现有配置，后台用新 URL 重试。内容变化且内核就绪时通过原生 `PUT /configs?force=true` 热加载，内容相同且此前刷新成功时跳过加载。成功响应兼容原有 success/message，失败使用原有错误格式。HTTP(S) 订阅受公网地址、重定向检查和 16 MiB 限制。
 
 Agent 每次启动立即检查已保存 URL，运行期间每 12 小时刷新，失败退避 1～30 分钟；这不要求网页保持打开，不改变 Enabled、系统代理或 TUN 偏好。设置增加 `subscription_updated_at`（成功时间，Unix 秒，默认 0）。握手 features 增加 subscription_refresh。网页轮询、启动自动刷新、手动导入串行；代理设置回滚不覆盖新订阅元数据。
 

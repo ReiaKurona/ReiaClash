@@ -115,14 +115,18 @@ func Run(ctx context.Context) error {
 		if !desktopAgentGate.beginExit() {
 			return
 		}
-		if err := postJSON("/api/agent/exit", nil); err != nil {
-			desktopAgentGate.cancelExit()
-			slog.Error("退出客户端失败", "error", err)
-			tray.ShowNotification("ReiaClash", "暂时无法退出，请稍后重试。")
-			return
-		}
-		cancel()
-		tray.Remove()
+		go func() {
+			exited, err := requestDesktopExit(runCtx)
+			if !exited {
+				desktopAgentGate.cancelExit()
+				if err != nil && runCtx.Err() == nil {
+					slog.Error("退出客户端失败", "error", err)
+					tray.ShowNotification("ReiaClash 退出未完成", err.Error())
+				}
+				return
+			}
+			cancel()
+		}()
 	})
 
 	tray.SetIcon(branding.TrayPNG).SetTooltip("ReiaClash [初始化中...]").SetMenu(menu).Show()

@@ -43,9 +43,12 @@ func BuildConfig(profile []byte, settings config.Settings, secret string) ([]byt
 	}
 	stack := settings.TunStack
 	if !config.ValidTunStack(stack) {
-		stack = "mixed"
+		stack = config.Defaults().TunStack
 	}
 	fmt.Fprintf(&out, "  stack: %s\n  auto-route: true\n  auto-detect-interface: true\n", stack)
+	if settings.TunDevice != "" && config.ValidTunDevice(settings.TunDevice) {
+		fmt.Fprintf(&out, "  device: %q\n", settings.TunDevice)
+	}
 	out.Write(clean)
 	if len(clean) > 0 && clean[len(clean)-1] != '\n' {
 		out.WriteByte('\n')

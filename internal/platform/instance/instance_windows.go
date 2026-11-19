@@ -38,7 +38,9 @@ func acquire(role string, attributes *windows.SecurityAttributes) (*Lock, error)
 	if err != nil {
 		return nil, err
 	}
-	handle, err := windows.CreateMutex(attributes, false, name)
+	// The lease is represented by an open handle. Requesting full mutex
+	// access would require rights the Agent does not use during a handover.
+	handle, err := windows.CreateMutexEx(attributes, name, 0, windows.SYNCHRONIZE)
 	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		if handle != 0 {
 			windows.CloseHandle(handle)

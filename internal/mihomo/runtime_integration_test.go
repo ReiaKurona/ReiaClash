@@ -176,4 +176,29 @@ func TestMihomoRuntimeRouting(t *testing.T) {
 			t.Fatalf("unexpected runtime config: %+v", result)
 		}
 	}
+	if _, _, err := client.Do(ctx, http.MethodPatch, "/configs", map[string]any{
+		"tun": map[string]any{"enable": false, "stack": "mips"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var actual struct {
+		Mode string `json:"mode"`
+		Tun  struct {
+			Enable bool   `json:"enable"`
+			Stack  string `json:"stack"`
+		} `json:"tun"`
+	}
+	if err := client.GetJSON(ctx, "/configs", &actual); err != nil || actual.Tun.Enable || !strings.EqualFold(actual.Tun.Stack, "mips") {
+		t.Fatalf("TUN PATCH without enabling interception: %+v, %v", actual, err)
+	}
+	reloaded := strings.Replace(configuration, "mode: rule", "mode: direct", 1)
+	if err := os.WriteFile(path, []byte(reloaded), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := client.Do(ctx, http.MethodPut, "/configs?force=true", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.GetJSON(ctx, "/configs", &actual); err != nil || !strings.EqualFold(actual.Mode, "direct") {
+		t.Fatalf("same running child did not reload its configured file: %+v, %v", actual, err)
+	}
 }

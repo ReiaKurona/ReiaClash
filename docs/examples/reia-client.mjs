@@ -130,6 +130,7 @@ export class ReiaClient {
 
   health(options) { return this.agent('/api/health', options); }
   status(options) { return this.agent('/api/agent/real-status', options); }
+  outboundIP(options) { return this.agent('/api/agent/outbound-ip', options); }
   systemStatus(options) { return this.agent('/api/system/status', options); }
   panel(options) { return this.agent('/api/agent/panel', options); }
   events(since = 0, options) { return this.agent('/api/agent/events?since=' + encodeURIComponent(since), options); }
