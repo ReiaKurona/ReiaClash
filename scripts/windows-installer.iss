@@ -32,8 +32,8 @@ Source: "{#ArchivePath}"; Flags: dontcopy noencryption nocompression
 Source: "{tmp}\ReiaClash-payload.7z"; DestDir: "{app}"; ExternalSize: {#PayloadBytes}; Flags: external extractarchive recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{userdesktop}\ReiaClash"; Filename: "{app}\reia.exe"; WorkingDir: "{app}"; Tasks: desktopicon
-Name: "{userprograms}\ReiaClash"; Filename: "{app}\reia.exe"; WorkingDir: "{app}"; Tasks: startmenuicon
+Name: "{userdesktop}\ReiaClash"; Filename: "{app}\reia.exe"; WorkingDir: "{app}"; AppUserModelID: "ReiaClash.Windows"; Tasks: desktopicon
+Name: "{userprograms}\ReiaClash"; Filename: "{app}\reia.exe"; WorkingDir: "{app}"; AppUserModelID: "ReiaClash.Windows"; Tasks: startmenuicon
 
 [Run]
 Filename: "{app}\reia.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,ReiaClash}"; Flags: postinstall nowait skipifsilent unchecked runasoriginaluser

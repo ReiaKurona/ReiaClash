@@ -10,17 +10,6 @@ import (
 	"strings"
 )
 
-// DesktopIconPath materializes the embedded icon for notification/desktop
-// APIs that accept a filename rather than PNG bytes.
-func DesktopIconPath() (string, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(cache, "ReiaClash", "icons", "reia-clash.png")
-	return path, writeAsset(path, PNG)
-}
-
 // InstallDesktopEntries gives desktop environments an icon for each Reia
 // executable. Only the main launcher appears in application menus.
 func InstallDesktopEntries() error {
@@ -64,10 +53,9 @@ func InstallDesktopEntries() error {
 }
 
 func desktopEntry(part, executable, icon string) string {
-	name := "ReiaClash"
+	name := AppName
 	hidden := ""
 	if part != "reia" {
-		name += " (" + part + ")"
 		hidden = "NoDisplay=true\n"
 	}
 	// Exec has both Desktop Entry string escaping and quoted-argument
@@ -78,26 +66,4 @@ func desktopEntry(part, executable, icon string) string {
 
 func desktopString(value string) string {
 	return strings.NewReplacer(`\`, `\\`, "\n", `\n`, "\r", `\r`, "\t", `\t`).Replace(value)
-}
-
-func writeAsset(path string, content []byte) error {
-	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, content) {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".reia-icon-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if _, err := file.Write(content); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
 }

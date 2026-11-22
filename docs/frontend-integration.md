@@ -193,7 +193,7 @@ renderService({
 服务模式下 exitAgent() 返回 background:true，后台 API 继续运行。API 本身不会关闭托盘，托盘菜单是在调用成功后自行退出；网页不应显示“整个客户端已退出”。
 普通模式下该接口会请求 Agent 退出；关闭网页或卸载组件则只需要停止前端定时器，不要调用 exitAgent()。
 
-### Agent 维护与打开本机目录
+### Agent 维护、目录容量与打开本机目录
 
 以下方法绑定用户点击事件，分别执行，不在页面加载或重连时自动调用：
 
@@ -204,7 +204,11 @@ await client.openDirectory('cache');  // 本机用户配置目录内的 updates/
 await client.openDirectory('config'); // 本机用户配置根目录
 ```
 
-这些维护操作不重启内核，不清除设置、订阅、密钥或已下载内核；详细清理范围和响应计数见 [API](api.md#agent-缓存日志和目录)。打开目录返回 202 表示客户端已请求系统文件管理器打开，不保证当前桌面会话一定显示窗口。维护失败可能已清理部分内容，显示原始错误，不自动重复发送请求。网页的内核 WebSocket 日志显示与磁盘 Agent 日志是不同数据源。
+`client.directorySizes()` 查询升级缓存、应用旁 data 和配置目录容量。使用 `client.openDirectory('work')` 打开应用旁 data。Aether M3 在「客户端设置 → 存储与目录」统一展示。
+
+接入类同时提供 `setSilentProxyOnLogin`、`resources`、`setResourceSchedule` 和 `syncResources`。先在页面完成确认交互再调用 `clearSubscription`。该操作清空本机订阅缓存并暂停自动导入，目录、资源和订阅接口字段见 [API](api.md)。
+
+缓存和日志清理不重启内核，保留设置、订阅、密钥和已下载内核；详细清理范围和响应计数见 [API](api.md#agent-缓存日志和目录)。打开目录返回 202 表示客户端已请求系统文件管理器打开，不保证当前桌面会话一定显示窗口。维护失败可能已清理部分内容，显示原始错误，不自动重复发送请求。网页的内核 WebSocket 日志显示与磁盘 Agent 日志是不同数据源。
 
 支持 `tun_device` 的客户端可通过 `client.settings({ tun_device: 'ReiaWork' })` 保存网卡名。macOS 使用 `utun` 加编号，各平台均可传空字符串自动选择。`client.status()` 的 `real_tun_device` 用于显示活动网卡。`client.outboundIP()` 可在总开关、模式、TUN 或节点变化后重新调用，查询失败时显示暂不可用并取消上一次探测。[设置与状态 API](api.md#状态设置与启停)
 

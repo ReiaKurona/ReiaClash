@@ -44,7 +44,7 @@ func TestAgentMaintenancePreservesConfigurationAndLogWriter(t *testing.T) {
 		t.Fatal(history)
 	}
 	logs, err := app.ClearAgentLogs()
-	if err != nil || logs.Files != 2 || logs.Events != 2 {
+	if err != nil || logs.Files != 3 || logs.Events != 2 {
 		t.Fatal(logs, err)
 	}
 	if len(app.EventsAfter(0)) != 0 {
@@ -60,10 +60,13 @@ func TestAgentMaintenancePreservesConfigurationAndLogWriter(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(paths.Root, "agent.log")); string(data) != "after" {
 		t.Fatalf("existing log handle failed: %q", data)
 	}
-	for _, name := range []string{"settings.json", "profile.yaml", "mihomo.yaml", "mihomo.secret", "core-service.token", "core-service.json", "system-proxy-backup.json", "core-service.log"} {
+	for _, name := range []string{"settings.json", "profile.yaml", "mihomo.yaml", "mihomo.secret", "core-service.token", "core-service.json", "system-proxy-backup.json"} {
 		if data, _ := os.ReadFile(filepath.Join(paths.Root, name)); string(data) != "preserve" {
 			t.Fatal("changed", name)
 		}
+	}
+	if data, err := os.ReadFile(filepath.Join(paths.Root, "core-service.log")); err != nil || len(data) != 0 {
+		t.Fatalf("service log was not cleared: %v", err)
 	}
 	if app.PanelState() != panel {
 		t.Fatal("pairing changed")

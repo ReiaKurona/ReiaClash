@@ -46,3 +46,27 @@ func (s *Server) openAgentDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"success": true, "directory": request.Directory, "message": "已请求客户端打开目录"})
 }
+
+func (s *Server) agentDirectorySizes(w http.ResponseWriter, r *http.Request) {
+	sizes, err := s.app.DirectorySizes(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "directories": sizes})
+}
+
+func (s *Server) clearSubscription(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := decodeBody(r, &request); err != nil || !request.Confirm {
+		writeError(w, http.StatusBadRequest, "confirmation_required", "请确认清除订阅与缓存配置")
+		return
+	}
+	if err := s.app.ClearSubscription(r.Context()); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}

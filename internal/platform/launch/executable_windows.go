@@ -3,6 +3,7 @@
 package launch
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,6 +26,11 @@ func ResolveExecutable(path string) (string, error) {
 	defer windows.CloseHandle(handle)
 	buffer := make([]uint16, 32768)
 	length, err := windows.GetFinalPathNameByHandle(handle, &buffer[0], uint32(len(buffer)), 0)
+	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		// A normalized name can require directory traversal rights on SMB.
+		const fileNameOpened = 0x8
+		length, err = windows.GetFinalPathNameByHandle(handle, &buffer[0], uint32(len(buffer)), fileNameOpened)
+	}
 	if err != nil {
 		return "", err
 	}

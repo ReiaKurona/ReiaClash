@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	windows := flag.Bool("windows-resources", false, "regenerate Windows COFF icon resources using pinned rsrc")
+	windows := flag.Bool("windows-resources", false, "regenerate Windows COFF icon resources using pinned go-winres")
 	flag.Parse()
 	root, err := os.Getwd()
 	check(err)
@@ -80,20 +80,22 @@ func main() {
 	check(binary.Write(&icns, binary.BigEndian, uint32(8+chunks.Len())))
 	icns.Write(chunks.Bytes())
 	check(os.WriteFile(filepath.Join(directory, "reia-clash.icns"), icns.Bytes(), 0644))
+	themePublic := filepath.Join(root, "Xboard-Theme-Aether-M3", "public")
+	if _, err := os.Stat(themePublic); err == nil {
+		check(os.WriteFile(filepath.Join(themePublic, "favicon.ico"), ico.Bytes(), 0644))
+		check(os.WriteFile(filepath.Join(themePublic, "reia-clash.png"), images[256], 0644))
+	} else if !os.IsNotExist(err) {
+		check(err)
+	}
 	if *windows {
-		buildDir := filepath.Join(root, ".build", "icon-resources")
-		check(os.MkdirAll(buildDir, 0755))
-		for _, arch := range []string{"386", "amd64", "arm64"} {
-			output := filepath.Join(buildDir, "icon_windows_"+arch+".syso")
-			cmd := exec.Command("go", "run", "github.com/akavel/rsrc@v0.10.2", "-arch", arch, "-ico", iconPath, "-o", output)
+		for _, part := range []string{"reia", "reia-agent", "reia-tray", "reia-service"} {
+			output := filepath.Join(root, "cmd", part, "icon")
+			cmd := exec.Command("go", "run", "github.com/tc-hib/go-winres@v0.3.3", "simply",
+				"--arch", "386,amd64,arm64", "--out", output, "--icon", iconPath, "--manifest", "none",
+				"--file-description", "ReiaClash", "--product-name", "ReiaClash", "--original-filename", part+".exe")
 			cmd.Dir = root
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 			check(cmd.Run())
-			resource, err := os.ReadFile(output)
-			check(err)
-			for _, part := range []string{"reia", "reia-agent", "reia-tray", "reia-service"} {
-				check(os.WriteFile(filepath.Join(root, "cmd", part, filepath.Base(output)), resource, 0644))
-			}
 		}
 	}
 	fmt.Println("ReiaClash icons generated from ico/reia-clash.jpeg")

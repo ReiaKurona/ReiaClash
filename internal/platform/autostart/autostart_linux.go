@@ -43,7 +43,7 @@ func Set(enabled bool, executable string) error {
 		return err
 	}
 	// Desktop Entry 的 Exec 字段不使用 shell；双引号和反斜杠需单独转义。
-	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(executable) + `" --background`
+	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(executable) + `" --background --login-autostart`
 	content := "[Desktop Entry]\nType=Application\nName=ReiaClash\nExec=" + quoted + "\nX-GNOME-Autostart-enabled=true\n"
 	if icon, err := branding.DesktopIconPath(); err == nil {
 		content += "Icon=" + strings.NewReplacer(`\`, `\\`, "\n", `\n`, "\r", `\r`).Replace(icon) + "\n"

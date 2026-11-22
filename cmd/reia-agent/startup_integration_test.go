@@ -51,7 +51,7 @@ func TestStartupAPIWithStaleServiceAndBusyKernelPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prefs.Update(func(s *config.Settings) error { *s = config.Defaults(); s.Enabled = false; return nil }); err != nil {
+	if _, err := prefs.Update(func(s *config.Settings) error { *s = config.Defaults(); s.Enabled = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if err := mihomo.EnableServiceLifecycle(paths.Root); err != nil {
@@ -96,6 +96,22 @@ func TestStartupAPIWithStaleServiceAndBusyKernelPort(t *testing.T) {
 	}
 	if status.External {
 		t.Fatal("stale marker still selects an absent helper")
+	}
+	statusResponse, err := client.Get("http://127.0.0.1:25500/api/agent/real-status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual struct {
+		Settings config.Settings
+		RealTun  bool `json:"real_tun"`
+	}
+	err = json.NewDecoder(statusResponse.Body).Decode(&actual)
+	statusResponse.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.Settings.Enabled || actual.RealTun || !actual.Settings.UseTun || actual.Settings.TunStack != "mips" {
+		t.Fatalf("cold start failed to pause while preserving TUN preferences: %+v", actual)
 	}
 	response, err = client.Post("http://127.0.0.1:25500/api/agent/exit", "application/json", nil)
 	if err != nil {

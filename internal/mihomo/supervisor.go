@@ -4,29 +4,37 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"reia-clash/internal/config"
+	"reia-clash/internal/kernelbinary"
 	"reia-clash/internal/platform/launch"
+	"reia-clash/internal/platform/network"
 )
+
+func StartupTimeout(binary string) time.Duration {
+	if kernelbinary.IsMeow(binary) {
+		return 40 * time.Second
+	}
+	return 15 * time.Second
+}
 
 func (m *Manager) supervise(ctx context.Context) {
 	backoff := time.Second
 	shortFailures := 0
 	for ctx.Err() == nil {
-		binary := m.BinaryPath()
-		if binary == "" {
-			m.setRunning(false, "mihomo 内核尚未安装")
-			select {
-			case <-m.restart:
-				continue
-			case <-ctx.Done():
-				return
+		if m.strictChildJob {
+			if err := m.settings.Reload(); err != nil {
+				m.logger.Warn("重新读取内核设置失败", "error", err)
 			}
 		}
+		binary := m.BinaryPath()
 		proxyAddress := "127.0.0.1:7890"
 		if m.settings.Snapshot().AllowLAN {
 			proxyAddress = "0.0.0.0:7890"
@@ -48,6 +56,24 @@ func (m *Manager) supervise(ctx context.Context) {
 				return
 			}
 		}
+		if err := network.RestoreMeowDNS(m.dataDir); err != nil {
+			m.setRunning(false, fmt.Sprintf("恢复系统 DNS 后才能启动内核: %v", err))
+			select {
+			case <-time.After(2 * time.Second):
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+		if binary == "" {
+			m.setRunning(false, "mihomo 内核尚未安装")
+			select {
+			case <-m.restart:
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
 		if err := os.MkdirAll(m.kernelDataDir, 0700); err != nil {
 			m.setRunning(false, fmt.Sprintf("无法创建 mihomo data 目录 %s: %v", m.kernelDataDir, err))
 			select {
@@ -57,7 +83,32 @@ func (m *Manager) supervise(ctx context.Context) {
 				return
 			}
 		}
-		cmd := exec.CommandContext(ctx, binary, "-d", m.kernelDataDir, "-f", m.configPath)
+		if err := m.persistRuntimeForBinary(binary); err != nil {
+			m.setRunning(false, fmt.Sprintf("生成内核运行配置失败: %v", err))
+			select {
+			case <-m.restart:
+			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
+				return
+			}
+			continue
+		}
+		if err := m.captureManagedDNS(binary); err != nil {
+			m.setRunning(false, fmt.Sprintf("无法备份 meow-rs 接管前的系统 DNS: %v", err))
+			select {
+			case <-time.After(2 * time.Second):
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+		args := []string{"-d", m.kernelDataDir, "-f", m.runtimePath(binary)}
+		cmd := exec.CommandContext(ctx, binary, args...)
+		if kernelbinary.IsMeow(binary) {
+			// Keep meow alive long enough for an explicit TUN cleanup request.
+			cmd = exec.Command(binary, args...)
+		}
+		cmd.Dir = m.kernelDataDir
 		m.mu.Lock()
 		m.lastOutput = ""
 		m.mu.Unlock()
@@ -73,10 +124,15 @@ func (m *Manager) supervise(ctx context.Context) {
 			}
 			var releaseChild func()
 			if err == nil {
-				releaseChild, err = launch.TrackChildProcess(cmd)
+				track := launch.TrackDesktopChildProcess
+				if m.strictChildJob {
+					track = launch.TrackChildProcess
+				}
+				releaseChild, err = track(cmd)
 				if err != nil {
 					_ = cmd.Process.Kill()
 					_ = cmd.Wait()
+					m.restoreManagedDNS()
 				}
 			}
 			if err == nil {
@@ -87,31 +143,45 @@ func (m *Manager) supervise(ctx context.Context) {
 				go m.copyLogs(stderr, "stderr")
 				wait := make(chan error, 1)
 				go func() { wait <- cmd.Wait() }()
-				readyCtx, cancelReady := context.WithTimeout(ctx, 15*time.Second)
-				readyErr := m.WaitReady(readyCtx)
+				readyCtx, cancelReady := context.WithTimeout(ctx, StartupTimeout(binary))
+				ready := make(chan error, 1)
+				go func() { ready <- m.WaitReady(readyCtx) }()
+				var readyErr error
+				select {
+				case readyErr = <-ready:
+					if readyErr != nil {
+						_ = m.stopKernelProcess(binary, cmd, wait)
+					}
+				case exitErr := <-wait:
+					readyErr = fmt.Errorf("内核提前退出: %v", exitErr)
+				}
 				cancelReady()
 				if readyErr != nil {
-					_ = cmd.Process.Kill()
-					err = <-wait
 					startedProcess = false
 					err = fmt.Errorf("mihomo 外部控制器未就绪: %w", readyErr)
 				} else {
-					m.setRunning(true, "")
+					m.observeManagedDNS(binary)
+					m.profileMu.Lock()
+					m.restoreSelections(ctx)
+					m.profileMu.Unlock()
+					m.mu.Lock()
+					m.runningBinary, m.runningPID, m.running, m.lastError = binary, cmd.Process.Pid, true, ""
+					m.mu.Unlock()
 					select {
 					case err = <-wait:
 					case <-m.restart:
 						requestedRestart = true
-						_ = cmd.Process.Kill()
-						err = <-wait
+						err = m.stopKernelProcess(binary, cmd, wait)
 					case <-ctx.Done():
-						_ = cmd.Process.Kill()
-						<-wait
+						_ = m.stopKernelProcess(binary, cmd, wait)
 						m.setRunning(false, "")
 						releaseChild()
+						m.restoreManagedDNS()
 						return
 					}
 				}
 				releaseChild()
+				m.restoreManagedDNS()
 				if requestedRestart {
 					m.setRunning(false, "")
 					backoff, shortFailures = time.Second, 0
@@ -140,7 +210,7 @@ func (m *Manager) supervise(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if shortFailures >= 3 && m.rollbackPendingBinary() {
+		if (shortFailures >= 3 || (kernelbinary.IsMeow(binary) && !startedProcess)) && m.rollbackPendingBinary(binary) {
 			shortFailures = 0
 			backoff = time.Second
 			continue
@@ -159,8 +229,74 @@ func (m *Manager) supervise(ctx context.Context) {
 	}
 }
 
-func (m *Manager) rollbackPendingBinary() bool {
+func (m *Manager) captureManagedDNS(binary string) error {
 	settings := m.settings.Snapshot()
+	if !kernelbinary.IsMeow(binary) || !settings.Enabled || !settings.UseTun || !settings.TunAuthorized {
+		return nil
+	}
+	profile, err := os.ReadFile(filepath.Join(m.dataDir, "profile.yaml"))
+	if err != nil {
+		return err
+	}
+	options, err := MeowTunOptions(profile)
+	if err != nil || len(options.DNSHijack) == 0 {
+		return err
+	}
+	return network.SaveMeowDNS(m.dataDir)
+}
+
+func (m *Manager) restoreManagedDNS() {
+	if err := network.RestoreMeowDNS(m.dataDir); err != nil {
+		m.logger.Warn("恢复系统 DNS 失败", "error", err)
+		m.emit("error", "系统 DNS 恢复失败，已保留恢复记录")
+	}
+}
+
+func (m *Manager) stopKernelProcess(binary string, cmd *exec.Cmd, wait <-chan error) error {
+	m.observeManagedDNS(binary)
+	m.prepareKernelStop(binary)
+	if kernelbinary.IsMeow(binary) && cmd.Process.Signal(syscall.SIGTERM) == nil {
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		select {
+		case err := <-wait:
+			return err
+		case <-timer.C:
+		}
+	}
+	_ = cmd.Process.Kill()
+	return <-wait
+}
+
+func (m *Manager) observeManagedDNS(binary string) {
+	if kernelbinary.IsMeow(binary) {
+		if err := network.ObserveMeowDNS(m.dataDir); err != nil {
+			m.logger.Warn("确认 meow-rs DNS 接管记录失败", "error", err)
+		}
+	}
+}
+
+func (m *Manager) prepareKernelStop(binary string) {
+	if !kernelbinary.IsMeow(binary) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _, err := m.Client().Do(ctx, http.MethodPatch, "/configs", map[string]any{"tun": map[string]bool{"enable": false}})
+	if err != nil {
+		m.logger.Warn("meow-rs 停止前关闭 TUN 失败", "error", err)
+	}
+}
+
+func (m *Manager) rollbackPendingBinary(failed string) bool {
+	// The service may still have the pending snapshot after the Agent committed it.
+	if m.settings.Reload() != nil {
+		return false
+	}
+	settings := m.settings.Snapshot()
+	if settings.ActiveBinary != failed {
+		return false
+	}
 	if settings.ActiveBinary == "" || settings.PreviousBinary == "" || settings.ActiveBinary == settings.PreviousBinary {
 		return false
 	}
@@ -168,6 +304,9 @@ func (m *Manager) rollbackPendingBinary() bool {
 	if _, err := m.settings.Update(func(current *config.Settings) error {
 		current.ActiveBinary = previous
 		current.PreviousBinary = ""
+		if !kernelbinary.IsMeow(previous) {
+			current.MihomoFallback = ""
+		}
 		return nil
 	}); err != nil {
 		m.logger.Error("写入内核回滚状态失败", "error", err)
@@ -177,6 +316,9 @@ func (m *Manager) rollbackPendingBinary() bool {
 	m.mu.Lock()
 	m.binary = previous
 	m.mu.Unlock()
+	if err := m.PersistCurrentRuntimeConfig(); err != nil {
+		m.logger.Warn("恢复旧内核运行配置失败", "error", err)
+	}
 	m.logger.Error("新内核连续启动失败，已回滚到上一版本", "binary", previous)
 	m.emit("error", "新内核连续启动失败，已回滚到上一版本")
 	return true
@@ -205,5 +347,8 @@ func (m *Manager) copyLogs(reader io.ReadCloser, stream string) {
 func (m *Manager) setRunning(running bool, lastError string) {
 	m.mu.Lock()
 	m.running, m.lastError = running, lastError
+	if !running {
+		m.runningPID = 0
+	}
 	m.mu.Unlock()
 }

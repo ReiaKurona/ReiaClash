@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"os"
@@ -52,6 +53,19 @@ func TestAgentMaintenanceAPI(t *testing.T) {
 	if !strings.Contains(request("POST", "/api/agent/logs/clear", "", 200), `"log_files":1`) {
 		t.Fatal("missing cleanup counts")
 	}
+	if err := os.WriteFile(filepath.Join(paths.UpdateDir, "update.pack"), []byte("pack"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stats struct {
+		Directories map[string]agent.DirectorySize `json:"directories"`
+	}
+	if err := json.Unmarshal([]byte(request("GET", "/api/agent/directory/sizes", "", 200)), &stats); err != nil {
+		t.Fatal(err)
+	}
+	if stats.Directories["cache"].Bytes != 4 || stats.Directories["config"].Bytes != 0 || len(stats.Directories) != 4 {
+		t.Fatalf("invalid size totals: %+v", stats)
+	}
+	request("POST", "/api/agent/config/subscription/clear", `{"confirm":false}`, 400)
 	app.RecordDNS(agent.DNSRecord{Name: "example.com"})
 	if !strings.Contains(request("POST", "/api/agent/cache/clear", "", 200), `"dns_records":1`) {
 		t.Fatal("missing cache counts")

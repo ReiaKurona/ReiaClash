@@ -3,6 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
+
+	"reia-clash/internal/config"
+	"reia-clash/internal/platform/network"
 )
 
 // PrepareDesktopExit holds the service lock through uninstall and shutdown.
@@ -36,6 +39,15 @@ func (a *App) PrepareDesktopExit(ctx context.Context, uninstallService bool) (ba
 		return false, err
 	}
 	if err := a.Core.Shutdown(); err != nil {
+		return false, err
+	}
+	if err := network.RestoreMeowDNS(a.Paths.Root); err != nil {
+		return false, fmt.Errorf("系统 DNS 恢复失败，已保留恢复记录: %w", err)
+	}
+	if _, err := a.Prefs.Update(func(s *config.Settings) error {
+		s.Enabled = false
+		return nil
+	}); err != nil {
 		return false, err
 	}
 	a.exiting = true

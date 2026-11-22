@@ -51,8 +51,8 @@ secret 会交给当前网页 JavaScript。服务控制 token 不会返回给网�
 
 | 方法 | 路径 | 请求/主要返回 |
 | --- | --- | --- |
-| GET | /api/agent/real-status | 实际内核、系统代理、TUN、模式、LAN 与持久设置 |
-| GET | /api/agent/outbound-ip | Cloudflare Trace 观察到的公网出口。返回 `ip`、可选 `country_code` 与 Cloudflare 机房代码 `colo` |
+| GET | /api/agent/real-status | 实际内核、系统代理、TUN、模式、LAN 与持久设置。托盘请求 `?metrics=1` 时可附加 `core_memory_bytes` |
+| GET | /api/agent/outbound-ip | Cloudflare Trace 观察到的公网出口。返回兼容字段 `ip`（优先 IPv4）、可选 `country_code`、机房代码 `colo` 和单独探测的 `ipv6`。已探测但未取得公网 IPv6 时 `ipv6` 为空字符串 |
 | GET | /api/agent/events?since=0 | 增量事件列表，since 是事件 ID |
 | GET | /api/system/status | 自启、服务注册/ready/error、settings |
 | POST | /api/agent/master | {"enable":true} 或 false，总开关 |
@@ -66,6 +66,8 @@ real-status 主要字段：
 - is_actually_intercepting、real_system_proxy、real_tun、mihomo_running。TUN 生效时可返回 `real_tun_device`。
 - actual_mode、real_allow_lan、last_error、settings。
 - settings.enabled 是意图；显示实际接管应结合真实状态字段。
+
+总开关在普通 Agent 或内核系统服务冷启动时恢复为暂停。连接已经运行的服务会保留该会话状态。Windows meow-rs 依订阅启用 DNS 接管前保存网卡配置，退出恢复仍残留的回环 DNS。
 
 settings 部分更新接受：
 
@@ -168,7 +170,7 @@ Linux 移除后收到明确的 org.freedesktop.systemd1.NoSuchUnit，且无已�
 POST /api/agent/exit：
 
 - 服务模式：202，success:true、background:true，保留 Agent API 与内核；托盘收到结果后退出自身。
-- 普通模式：恢复本项目系统代理备份、停止内核，202 后请求 Agent 退出。
+- 普通模式：恢复本项目系统代理、停止内核、恢复已记录的 DNS，202 后请求 Agent 退出。
 - 该接口不关闭浏览器标签，也不是卸载服务接口。
 
 该 API 自身不会远程移除托盘。只有托盘菜单自己的退出流程会在收到 API 响应后退出托盘，网页直接调用不可据此宣称托盘已关闭。
@@ -185,14 +187,19 @@ POST /api/agent/exit：
 | POST | /api/subscription/url | {"url":"https://example.com/subscription"}，下载、校验并应用 |
 | GET | /api/subscription/status | 订阅刷新状态，不返回 URL 或 token |
 | POST | /api/subscription/refresh | 无需 URL，重新获取并应用已保存的最新订阅 |
+| GET | /subscription/source | 本机浏览器顶层只读页面。默认显示订阅缓存 YAML，`?view=runtime` 显示当前运行内核的 YAML。返回 HTML，关闭 CORS、嵌入和缓存 |
+
+`POST /api/core/select` 保存组与节点的手动选择。重启、换内核或热加载订阅后恢复仍存在的选项。
 
 切节点会关闭现有连接以便后续流量使用新节点；前端只更新选中项，不刷新框架。
 订阅内容中的客户端受管字段会被覆盖，原始订阅与生成配置分别保存。
 实际订阅地址可能含凭证，不要写入接手文档或测试固定数据。
 
-`POST /api/subscription/url` 在合法新 URL 被接受后先覆盖持久化 `settings.subscription_url`，再下载、校验并应用。后续下载或校验失败保留现有配置，后台用新 URL 重试。内容变化且内核就绪时通过原生 `PUT /configs?force=true` 热加载，内容相同且此前刷新成功时跳过加载。成功响应兼容原有 success/message，失败使用原有错误格式。HTTP(S) 订阅受公网地址、重定向检查和 16 MiB 限制。
+`POST /api/subscription/url` 在合法新 URL 被接受后先覆盖持久化 `settings.subscription_url`，再下载、校验并应用。后续下载或校验失败保留现有配置，后台用新 URL 重试。内容变化且内核就绪时通过原生 `PUT /configs?force=true` 的 `payload` 字段热加载生成的 YAML（mihomo 传原文，meow-rs 传 Base64），内容相同且此前刷新成功时跳过加载。成功响应兼容原有 success/message，失败使用原有错误格式。HTTP(S) 订阅受公网地址、重定向检查和 16 MiB 限制。
 
 Agent 每次启动立即检查已保存 URL，运行期间每 12 小时刷新，失败退避 1～30 分钟；这不要求网页保持打开，不改变 Enabled、系统代理或 TUN 偏好。设置增加 `subscription_updated_at`（成功时间，Unix 秒，默认 0）。握手 features 增加 subscription_refresh。网页轮询、启动自动刷新、手动导入串行；代理设置回滚不覆盖新订阅元数据。
+
+订阅状态的 `successful_attempt` 是当前 Agent 的成功刷新序号。主题遇到不确定的网络响应会比对操作前后的实际状态，避免把已完成的更新当成失败。
 
 状态示例：`{"has_url":true,"refreshing":false,"last_success_at":1700000000,"last_attempt_at":1700000000,"next_refresh_at":1700043200,"refresh_interval_hours":12}`。时间为 Unix 秒，尚未成功时为 0；next_refresh_at 是常规周期时间，失败时实际可提前退避重试。last_error 可省略，只保留不含订阅凭证的概括错误。attempt/error 是本次 Agent 内存状态，成功时间持久化。
 
@@ -222,11 +229,25 @@ source 为 manual 或 kernel；limit 为 200。仅保存本次 Agent 运行中�
 | POST | /api/agent/logs/clear | 无请求体；200，`success:true`，`cleared:{log_files,events}` |
 | POST | /api/agent/directory/open | `{"directory":"cache"}` 或 `{"directory":"config"}`；202，`success:true`、`directory`、`message` |
 
-缓存清理只删除用户配置目录 `updates/` 内中断下载/解压产生的普通临时文件（`.mihomo-download.tmp`、`mihomo-*.tmp`、`mihomo-*.tmp.exe`），并清空当前 Agent 的 DNS 内存记录。更新正在下载/校验时拒绝清理，待完成后再调用。保留已下载的活动/待切换/回滚内核、`bin/`、应用旁的 `data/`、订阅、设置、密钥、服务记录和代理备份；不清除内核自己的 DNS/fake-IP 缓存。
+缓存清理只删除用户配置目录 `updates/` 内中断下载/解压产生的普通临时文件（`.mihomo-download.tmp`、`mihomo-*.tmp`、`mihomo-*.tmp.exe`），并清空当前 Agent 的 DNS 内存记录。更新正在下载/校验时拒绝清理，待完成后再调用。保留已校验的 `update.pack`、活动/待切换/回滚内核、`bin/`、应用旁的 `data/`、订阅、设置、密钥、服务记录和代理备份；不清除内核自己的 DNS/fake-IP 缓存。
 
 日志清理原地截断 `agent.log`、`agent-startup.log`，并清空 Agent 内存事件；不删除文件，不重启 Agent，后续日志继续写入。事件/DNS ID 保持递增，已连接面板的增量游标仍有效。服务日志、系统 journal、网页当前显示的 Mihomo WebSocket 日志不在此范围。运行中可能立即产生新日志或记录。
 
-打开目录由用户会话 Agent 调用 Windows Explorer、Linux `xdg-open` 或 macOS `open`。`cache` 对应 `updates/`，`config` 对应整个用户配置根目录；不接受任意路径。202 只表示已请求系统打开，实际文件管理器窗口取决于当前桌面会话。缺少/错误目录类型、未知字段或多余 JSON 返回 400；本地清理/启动文件管理器失败返回 500 `operation_failed`，可能已完成部分清理。无需系统提权。握手 `features` 增加 `agent_maintenance`。
+打开目录由用户会话 Agent 调用 Windows Explorer、Linux `xdg-open` 或 macOS `open`。`cache` 对应 `updates/`，`work` 对应应用旁 `data/`，`config` 对应用户配置根目录；不接受任意路径。202 只表示已请求系统打开，实际文件管理器窗口取决于当前桌面会话。缺少/错误目录类型、未知字段或多余 JSON 返回 400；本地清理/启动文件管理器失败返回 500 `operation_failed`，可能已完成部分清理。无需系统提权。握手 `features` 增加 `agent_maintenance`。
+
+`GET /api/agent/directory/sizes` 返回 `directories.cache/work/config`，各含 `bytes`、`files` 和 `partial`。统计逻辑文件大小，不跟随符号链接。配置根目录统计排除已单独统计的 `updates/`。`POST /api/agent/directory/open` 的 `work` 类型对应应用旁 `data/`。
+ 
+### 登录启动、外部资源与清理
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| POST | /api/system/autostart/proxy | `{"enable":true}` 注册登录启动项并保存静默启动代理。关闭此项只关闭静默代理。GET /api/system/status 返回 `silent_proxy_on_login` |
+| GET | /api/agent/resources | 可同步条目、大小和更新时间，及定时更新偏好 |
+| POST | /api/agent/resources/settings | `{"enable":true,"interval_hours":24,"kinds":["country","geosite","rules"]}` |
+| POST | /api/agent/resources/sync | `{"kinds":["country","rules"]}`，同步指定项 |
+| POST | /api/agent/config/subscription/clear | `{"confirm":true}`，清除本机订阅及缓存配置，暂停网页自动导入 |
+ 
+资源 ID 为 `country`、`geoip`、`metadb`、`geosite` 和 `rules`。Geo 使用固定发布源，`rules` 同步当前配置中的 HTTP 规则集。计划可设置 1–168 小时间隔。清除订阅保留客户端偏好、授权凭据和节点记忆。手动导入恢复自动同步。目录容量接口另含 `directories.logs`，日志清理只处理固定日志文件。工作目录没有清除接口。
 
 ## 重启与更新
 
@@ -234,10 +255,18 @@ source 为 manual 或 kernel；limit 为 200。仅保存本次 Agent 运行中�
 | --- | --- | --- |
 | POST | /api/core/restart | 手动重启当前管理模式下的内核，返回 202 |
 | POST | /api/agent/restart | 重启兼容入口 |
-| GET | /api/agent/check-update | 查询官方 mihomo release 和所选平台资产 |
-| POST | /api/agent/upgrade | {"is_silent":true} 暂存，下次重启切换；false 立即请求重启 |
+| GET | /api/core/type | 返回 `{"success":true,"kind":"mihomo"}`，类型也可能是 `meow-rs` |
+| POST | /api/core/type | `{"kind":"meow-rs"}` 或 `{"kind":"mihomo"}`。目标内核启动验证完成后返回 200 |
+| GET | /api/agent/check-update | 查询当前内核类型的官方稳定版和适配资产 |
+| POST | /api/agent/upgrade | 手动模式验证目标内核启动后返回 200。静默模式验证并保存 `updates/update.pack` 后返回 200，`pending:true` 表示等待应用 |
 
-重启与升级的 202 是已接受请求；实际完成应轮询 real-status，而不是刷新整个页面。
+切换到 meow-rs 时，Agent 通过正在运行的 mihomo mixed 代理获取发布元数据和资产。校验归档 SHA-256、可执行文件和当前配置后开始交接。交接期间下载请求和生命周期请求可能持续数十秒。启动验证失败会尝试恢复上一个可用内核，并返回操作错误。
+
+`GET /api/agent/real-status` 包含 `core_kind`。轻量轮询可使用 `GET /api/health` 的 `agent_pid` 和 `core_busy`，忙碌期间暂停详细状态和列表轮询。完整面板 URL 变化或 Agent PID 变化后重新握手。固化更新包在暂停接管、Agent 启动（含自启）或手动重启内核时应用。重启接口仍返回 202，面板可随后通过状态接口确认运行情况。
+
+请求 `POST /api/agent/master` 开启且两种接管方式均未配置时，Agent 选择原版 mihomo、TUN 和 mips。需要权限时走原系统授权流程。
+
+`POST /api/subscription/url` 可传 `sync_only:true`。当前链接一致且最近 12 小时已有成功刷新时直接确认，URL 变化仍立即应用。省略时保留手动导入语义。
 
 ## 响应、错误与重试约定
 

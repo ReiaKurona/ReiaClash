@@ -7,48 +7,54 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
 	"reia-clash/internal/config"
 	"reia-clash/internal/mihomo"
 	"reia-clash/internal/platform/coreservice"
+	"reia-clash/internal/platform/network"
 	"reia-clash/internal/platform/privilege"
 	"reia-clash/internal/platform/systemproxy"
 	"reia-clash/internal/update"
 )
 
 type App struct {
-	Paths                config.Paths
-	Prefs                *config.Store
-	Core                 *mihomo.Manager
-	Updater              *update.Manager
-	Logger               *slog.Logger
-	Exit                 chan struct{}
-	exitOnce             sync.Once
-	serviceMu            sync.Mutex
-	exiting              bool
-	subscriptionMu       sync.Mutex
-	subscriptionStatusMu sync.Mutex
-	subscriptionBusy     bool
-	subscriptionAttempt  int64
-	subscriptionError    string
-	subscriptionWake     chan struct{}
-	subscriptionFetch    func(context.Context, string) ([]byte, error)
-	subscriptionApply    func([]byte) error
-	services             servicePlatform
-	dnsMu                sync.Mutex
-	dnsRecords           []DNSRecord
-	dnsID                uint64
-	dnsCaptureError      string
-	panelMu              sync.RWMutex
-	panelURL             string
-	panelNetwork         string
-	runCtxMu             sync.RWMutex
-	runCtx               context.Context
-	eventsMu             sync.Mutex
-	events               []Event
-	eventID              uint64
+	Paths                 config.Paths
+	Prefs                 *config.Store
+	Core                  *mihomo.Manager
+	Updater               *update.Manager
+	Logger                *slog.Logger
+	Exit                  chan struct{}
+	exitOnce              sync.Once
+	serviceMu             sync.Mutex
+	proxyIntent           bool
+	resourceMu            sync.Mutex
+	exiting               bool
+	subscriptionMu        sync.Mutex
+	subscriptionStatusMu  sync.Mutex
+	subscriptionBusy      bool
+	subscriptionAttempt   int64
+	subscriptionAttemptID uint64
+	subscriptionSuccessID uint64
+	subscriptionError     string
+	subscriptionWake      chan struct{}
+	subscriptionFetch     func(context.Context, string) ([]byte, error)
+	subscriptionApply     func([]byte) error
+	services              servicePlatform
+	dnsMu                 sync.Mutex
+	dnsRecords            []DNSRecord
+	dnsID                 uint64
+	dnsCaptureError       string
+	panelMu               sync.RWMutex
+	panelURL              string
+	panelNetwork          string
+	runCtxMu              sync.RWMutex
+	runCtx                context.Context
+	eventsMu              sync.Mutex
+	events                []Event
+	eventID               uint64
 }
 
 func Open(logger *slog.Logger) (*App, error) {
@@ -74,13 +80,22 @@ func Open(logger *slog.Logger) (*App, error) {
 		logger.Warn("mihomo 内核尚未就绪", "error", binaryErr)
 		binary = ""
 	}
-	if prefs.Snapshot().ActiveBinary != binary {
-		if _, err := prefs.Update(func(s *config.Settings) error { s.ActiveBinary = binary; return nil }); err != nil {
+	saved := prefs.Snapshot()
+	if !serviceEnabled && (saved.ActiveBinary != binary || saved.Enabled) {
+		if _, err := prefs.Update(func(s *config.Settings) error {
+			s.ActiveBinary = binary
+			s.Enabled = false
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 	}
 	logger.Info("已选择 mihomo 内核", "binary", binary)
-	core, err := mihomo.NewManager(paths.Root, filepath.Join(paths.Root, "mihomo.yaml"), binary, prefs, logger)
+	newManager := mihomo.NewManager
+	if serviceEnabled {
+		newManager = mihomo.NewDelegatedManager
+	}
+	core, err := newManager(paths.Root, filepath.Join(paths.Root, "mihomo.yaml"), binary, prefs, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -108,15 +123,41 @@ func (a *App) Start(ctx context.Context) error {
 	a.runCtx = ctx
 	a.runCtxMu.Unlock()
 	go a.checkPanelNetwork(ctx)
+	startupUpdate := func() {
+		a.serviceMu.Lock()
+		defer a.serviceMu.Unlock()
+		applied, err := a.applyPending(ctx)
+		if err != nil && ctx.Err() == nil {
+			a.AddEvent("error", "启动时静默更新未应用："+err.Error())
+		}
+		if !applied && ctx.Err() == nil {
+			if err := a.migrateActiveKernel(ctx); err != nil {
+				a.AddEvent("error", "暂存内核迁移失败："+err.Error())
+			}
+		}
+	}
 	if a.Core.UsesExternalLifecycle() {
-		// Service readiness can take seconds. Keep health/API available throughout.
 		go func() {
 			if err := a.Core.Start(ctx); err != nil && ctx.Err() == nil {
 				a.AddEvent("error", "Mihomo 特权服务暂时无法连接，请在服务开关修复："+err.Error())
+				return
 			}
+			if ctx.Err() != nil {
+				return
+			}
+			a.serviceMu.Lock()
+			if err := a.Prefs.Reload(); err != nil && !os.IsNotExist(err) {
+				a.AddEvent("error", "读取服务启动状态失败："+err.Error())
+			}
+			a.syncStartupProxy(ctx)
+			a.serviceMu.Unlock()
+			startupUpdate()
 		}()
-	} else if err := a.Core.Start(ctx); err != nil {
-		return err
+	} else {
+		startupUpdate()
+		if err := a.Core.Start(ctx); err != nil {
+			return err
+		}
 	}
 	settings := a.Prefs.Snapshot()
 	if settings.OutboundMode == "global" {
@@ -130,18 +171,31 @@ func (a *App) Start(ctx context.Context) error {
 			}
 		}()
 	}
+	if !a.Core.UsesExternalLifecycle() {
+		a.syncStartupProxy(ctx)
+	}
+	if a.Updater != nil {
+		if _, err := a.Updater.ClearCache(); err != nil {
+			a.Logger.Warn("清理未完成的内核更新包失败", "error", err)
+		}
+		go a.autoUpdateLoop(ctx)
+	}
+	go a.subscriptionRefreshLoop(ctx)
+	go a.captureDNS(ctx)
+	go a.resourceUpdateLoop(ctx)
+	return nil
+}
+
+func (a *App) syncStartupProxy(ctx context.Context) {
+	settings := a.Prefs.Snapshot()
 	if settings.Enabled && settings.UseSystemProxy {
-		go a.restoreStartupProxy(ctx)
-	} else if a.hasSystemProxyBackup() {
+		a.restoreStartupProxy(ctx)
+	} else if a.hasManagedProxyToRestore() {
 		// Restore only a proxy change owned by this client.
 		if err := systemproxy.Set(false, filepath.Join(a.Paths.Root, "system-proxy-backup.json")); err != nil {
 			a.AddEvent("error", "启动时检查并关闭残留系统代理失败："+err.Error())
 		}
 	}
-	go a.autoUpdateLoop(ctx)
-	go a.subscriptionRefreshLoop(ctx)
-	go a.captureDNS(ctx)
-	return nil
 }
 
 func (a *App) restoreStartupProxy(ctx context.Context) {
@@ -184,7 +238,7 @@ func (a *App) PrepareExit() error {
 	if a.Core.UsesExternalLifecycle() {
 		return nil
 	}
-	if !a.hasSystemProxyBackup() {
+	if !a.hasManagedProxyToRestore() {
 		return nil
 	}
 	return systemproxy.Set(false, filepath.Join(a.Paths.Root, "system-proxy-backup.json"))
@@ -195,16 +249,30 @@ func (a *App) hasSystemProxyBackup() bool {
 	return err == nil
 }
 
+func (a *App) hasManagedProxyToRestore() bool {
+	return a.hasSystemProxyBackup() || (runtime.GOOS == "windows" && systemproxy.Enabled())
+}
+
 func (a *App) RealStatus(ctx context.Context) Status {
 	settings := a.Prefs.Snapshot()
 	running, processError := a.Core.Status()
 	status := Status{
+		CoreKind:        a.CoreKind(),
 		Settings:        settings,
 		MihomoRunning:   running,
 		LastError:       processError,
 		RealSystemProxy: systemproxy.Enabled(),
 	}
 	if running {
+		statusCtx := ctx
+		if status.CoreKind == "meow-rs" {
+			if device := network.ActiveMeowTun(settings.TunDevice); device != "" {
+				status.RealTun, status.RealTunDevice = true, device
+			}
+			var cancel context.CancelFunc
+			statusCtx, cancel = context.WithTimeout(ctx, time.Second)
+			defer cancel()
+		}
 		var coreConfig struct {
 			Mode     string `json:"mode"`
 			AllowLAN bool   `json:"allow-lan"`
@@ -213,12 +281,11 @@ func (a *App) RealStatus(ctx context.Context) Status {
 				Device string `json:"device"`
 			} `json:"tun"`
 		}
-		if err := a.Core.Client().GetJSON(ctx, "/configs", &coreConfig); err == nil {
+		if err := a.Core.Client().GetJSON(statusCtx, "/configs", &coreConfig); err == nil {
 			status.ActualMode = coreConfig.Mode
 			status.RealAllowLAN = coreConfig.AllowLAN
-			status.RealTun = settings.Enabled && coreConfig.Tun.Enable
-			if status.RealTun {
-				status.RealTunDevice = coreConfig.Tun.Device
+			if !status.RealTun && coreConfig.Tun.Enable {
+				status.RealTun, status.RealTunDevice = true, coreConfig.Tun.Device
 			}
 		}
 	}

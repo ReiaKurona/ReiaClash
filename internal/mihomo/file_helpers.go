@@ -7,30 +7,21 @@ import (
 )
 
 func replaceFile(temp, destination string) error {
-	backup := destination + ".previous"
-	_ = os.Remove(backup)
-	if err := os.Rename(destination, backup); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.Rename(temp, destination); err != nil {
-		_ = os.Rename(backup, destination)
-		return err
-	}
-	_ = os.Remove(backup)
-	return nil
+	return os.Rename(temp, destination)
 }
 
 func atomicWrite(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	if err != nil {
 		return err
 	}
-	if err := replaceFile(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	defer os.Remove(tmp.Name())
+	_, writeErr := tmp.Write(data)
+	if err := errors.Join(writeErr, tmp.Close()); err != nil {
 		return err
 	}
-	return nil
+	return replaceFile(tmp.Name(), path)
 }

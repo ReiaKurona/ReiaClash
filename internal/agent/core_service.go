@@ -123,6 +123,9 @@ func (a *App) installCoreService(ctx context.Context) error {
 	if err := a.Core.Start(a.context()); err != nil {
 		return fmt.Errorf("特权服务已安装，但暂时无法连接：%w", err)
 	}
+	if err := a.Prefs.Reload(); err != nil {
+		return err
+	}
 	a.AddEvent("info", "Mihomo 特权服务已安装，内核崩溃后会由系统服务管理器自动恢复")
 	return nil
 }
@@ -150,9 +153,13 @@ func (a *App) removeCoreService(ctx context.Context, resumeLocal bool) error {
 	}
 	a.Prefs.SetRuntimeTunAuthorization(privilege.RequireTunPrivilege() == nil)
 	if _, err := a.Prefs.Update(func(s *config.Settings) error {
-		s.UseTun = false
-		if !s.UseSystemProxy {
+		if !resumeLocal {
 			s.Enabled = false
+		} else {
+			s.UseTun = false
+			if !s.UseSystemProxy {
+				s.Enabled = false
+			}
 		}
 		return nil
 	}); err != nil {

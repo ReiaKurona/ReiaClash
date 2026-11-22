@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订阅与内核配置 · ReiaClash</title>
+<style>
+  :root { color-scheme: light dark; background: Canvas; color: CanvasText; font-family: system-ui, sans-serif; }
+  body { margin: 0; padding: clamp(1rem, 5vw, 3rem); }
+  main { max-width: 72rem; margin: auto; }
+  h1 { font-size: 1.6rem; margin: 0; }
+  p { line-height: 1.5; }
+  nav { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+  nav a { color: LinkText; border-radius: .5rem; padding: .35rem .65rem; }
+  nav a[aria-current="page"] { font-weight: 700; background: color-mix(in srgb, CanvasText 12%, Canvas); }
+  pre { overflow: auto; padding: 1rem; border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); border-radius: .75rem; background: color-mix(in srgb, CanvasText 5%, Canvas); line-height: 1.5; tab-size: 2; }
+</style>
+<main>
+  <h1>订阅与内核配置</h1>
+  <nav aria-label="配置来源">
+    <a href="/subscription/source"{{if not .Runtime}} aria-current="page"{{end}}>原始订阅</a>
+    <a href="/subscription/source?view=runtime"{{if .Runtime}} aria-current="page"{{end}}>当前内核配置</a>
+  </nav>
+  <p>配置仅在本机显示，可能包含节点密码和密钥。</p>
+  {{if .Error}}<p role="status">{{.Error}}</p>{{else}}
+  <p><code>{{.Filename}}</code></p>
+  <pre tabindex="0" aria-label="{{.Filename}}"><code>{{.Content}}</code></pre>
+  {{end}}
+</main>
+</html>

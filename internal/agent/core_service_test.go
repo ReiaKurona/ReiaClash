@@ -159,8 +159,8 @@ func TestDesktopFullExitUninstallsWithoutStartingLocalKernel(t *testing.T) {
 	if err != nil || background || platform.uninstalls != 1 || app.Core.UsesExternalLifecycle() || app.Core.SupervisorStarted() {
 		t.Fatalf("full exit did not end service mode cleanly: background=%t, err=%v, uninstalls=%d", background, err, platform.uninstalls)
 	}
-	if state := app.Prefs.Snapshot(); state.Enabled || state.UseTun {
-		t.Fatal("full exit left privileged TUN configured")
+	if state := app.Prefs.Snapshot(); state.Enabled || !state.UseTun {
+		t.Fatal("full exit must pause TUN and retain the user's TUN preference")
 	}
 	if err := app.SetCoreService(t.Context(), true); err == nil {
 		t.Fatal("accepted a service start after committing to exit")

@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/sys/windows"
 	"reia-clash/internal/config"
+	"reia-clash/internal/kernelbinary"
 	"reia-clash/internal/platform/launch"
 )
 
@@ -53,9 +54,15 @@ func ownedProcess(p processRecord, root, installation, binary string) bool {
 		}
 		return false
 	}
-	return (samePath(p.Path, binary) || samePath(p.Path, filepath.Join(installation, "mihomo.exe"))) &&
-		samePath(value("-f"), filepath.Join(root, "mihomo.yaml")) &&
-		samePath(value("-d"), filepath.Join(installation, "data"))
+	legacyConfig := samePath(value("-f"), filepath.Join(root, "mihomo.yaml"))
+	if !samePath(value("-d"), filepath.Join(installation, "data")) {
+		return false
+	}
+	if kernelbinary.IsMeow(p.Path) {
+		return (samePath(p.Path, binary) || samePath(p.Path, filepath.Join(installation, "meow", "meow.exe"))) &&
+			(legacyConfig || samePath(value("-f"), filepath.Join(root, "meow.yaml")))
+	}
+	return legacyConfig && (samePath(p.Path, binary) || samePath(p.Path, filepath.Join(installation, "mihomo.exe")))
 }
 
 // Called only by an elevated installer, after the registered service was
@@ -84,7 +91,7 @@ func cleanupManagedProcesses(root string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	// Query metadata only. Native handles below recheck identity before killing.
-	script := `[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; ConvertTo-Json -Compress -InputObject @((Get-CimInstance Win32_Process) | Where-Object { $_.CreationDate -and ($_.Name -like '*mihomo*' -or $_.Name -in @('reia-agent.exe','reia-service.exe') -or $_.CommandLine -like '*mihomo.yaml*') } | ForEach-Object { [pscustomobject]@{ pid=$_.ProcessId; path=$_.ExecutablePath; command_line=$_.CommandLine; created=[string]$_.CreationDate.ToFileTimeUtc() } })`
+	script := `[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; ConvertTo-Json -Compress -InputObject @((Get-CimInstance Win32_Process) | Where-Object { $_.CreationDate -and ($_.Name -like '*mihomo*' -or $_.Name -in @('reia-agent.exe','reia-service.exe') -or $_.CommandLine -like '*mihomo.yaml*' -or $_.CommandLine -like '*meow.yaml*') } | ForEach-Object { [pscustomobject]@{ pid=$_.ProcessId; path=$_.ExecutablePath; command_line=$_.CommandLine; created=[string]$_.CreationDate.ToFileTimeUtc() } })`
 	snapshot := func() ([]processRecord, error) {
 		output, err := launch.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
 		if err != nil {

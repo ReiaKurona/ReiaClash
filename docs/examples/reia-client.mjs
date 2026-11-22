@@ -163,5 +163,11 @@ export class ReiaClient {
   exitAgent(options) { return this.agent('/api/agent/exit', { timeoutMs: 10000, ...options, method: 'POST' }); }
   clearAgentCache(options) { return this.agent('/api/agent/cache/clear', { ...options, method: 'POST' }); }
   clearAgentLogs(options) { return this.agent('/api/agent/logs/clear', { ...options, method: 'POST' }); }
+  setSilentProxyOnLogin(enable, options) { return this.agent('/api/system/autostart/proxy', { ...options, method: 'POST', body: { enable } }); }
+  resources(options) { return this.agent('/api/agent/resources', options); }
+  setResourceSchedule(settings, options) { return this.agent('/api/agent/resources/settings', { ...options, method: 'POST', body: settings }); }
+  syncResources(kinds, options) { return this.agent('/api/agent/resources/sync', { ...options, method: 'POST', body: { kinds } }); }
+  clearSubscription(options) { return this.agent('/api/agent/config/subscription/clear', { ...options, method: 'POST', body: { confirm: true } }); }
+  directorySizes(options) { return this.agent('/api/agent/directory/sizes', options); }
   openDirectory(directory, options) { return this.agent('/api/agent/directory/open', { ...options, method: 'POST', body: { directory } }); }
 }

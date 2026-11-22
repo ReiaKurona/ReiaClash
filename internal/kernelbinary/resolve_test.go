@@ -1,6 +1,7 @@
 package kernelbinary
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,25 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestAcceptedMeowWinsColdBootFallback(t *testing.T) {
+	root := t.TempDir()
+	app, managed := filepath.Join(root, "app"), filepath.Join(root, "bin")
+	saved := filepath.Join(root, "old-install", "meow.exe")
+	bundled := filepath.Join(app, Name(runtime.GOOS))
+	settings := config.Settings{ActiveBinary: saved, MihomoFallback: bundled}
+	for _, probe := range []error{nil, context.DeadlineExceeded} {
+		got, err := resolveAt(settings, managed, app, "", func(path string) error {
+			if path == saved {
+				return probe
+			}
+			return nil
+		})
+		if err != nil || got != saved {
+			t.Fatalf("accepted meow was replaced at startup: %s, %v", got, err)
+		}
+	}
+}
 
 func TestPlatformNames(t *testing.T) {
 	for platform, want := range map[string]string{"windows": "mihomo.exe", "linux": "mihomo", "darwin": "mihomo"} {

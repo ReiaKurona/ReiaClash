@@ -30,6 +30,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "显示 ReiaClash agent 版本")
 	webUIPath := flag.String("webui", "test-webui.html", "本地测试 WebUI 文件路径")
 	background := flag.Bool("background", false, "由系统启动项或托盘静默启动 agent")
+	login := flag.Bool("login-autostart", false, "由用户登录启动项启动")
 	noTray := flag.Bool("no-tray", false, "禁止自动拉起桌面托盘")
 	coreService := flag.Bool("core-service", false, "仅运行 Mihomo 特权服务，不启动 WebUI API")
 	installCoreService := flag.Bool("install-core-service", false, "由系统授权器安装 Mihomo 特权服务")
@@ -68,13 +69,13 @@ func main() {
 		return
 	}
 
-	if err := run(*webUIPath, *background, *noTray); err != nil {
+	if err := run(*webUIPath, *background, *noTray, *login); err != nil {
 		fmt.Fprintln(os.Stderr, "ReiaClash agent 启动失败:", err)
 		os.Exit(1)
 	}
 }
 
-func run(webUIPath string, background, noTray bool) error {
+func run(webUIPath string, background, noTray, login bool) error {
 	// Reserve the API port before Open writes configuration or starts a kernel.
 	// Concurrent tray/agent launches must never create competing supervisors.
 	listener, err := net.Listen("tcp4", "127.0.0.1:25500")
@@ -131,6 +132,10 @@ func run(webUIPath string, background, noTray bool) error {
 		return err
 	}
 
+	if login {
+		go app.StartLoginProxy(ctx)
+	}
+
 	// 当 agent 独立前台启动时，自动联动检测并拉起同目录的桌面托盘
 	if !background && !noTray {
 		go ensureTray(logger)
@@ -165,7 +170,7 @@ func ensureTray(logger *slog.Logger) {
 	if launch.IsProcessRunning(name) {
 		return
 	}
-	if err := launch.StartBackground(trayPath, "--background"); err != nil {
+	if err := launch.StartBackground(trayPath); err != nil {
 		logger.Warn("自动拉起桌面托盘失败", "error", err)
 	} else {
 		logger.Info("已自动联动启动桌面托盘", "tray", trayPath)

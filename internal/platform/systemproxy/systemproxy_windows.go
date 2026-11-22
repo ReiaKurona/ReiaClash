@@ -26,7 +26,7 @@ var internetSetOption = wininet.NewProc("InternetSetOptionW")
 func Enabled() bool {
 	enabled, enabledOK := readValue("ProxyEnable")
 	server, serverOK := readValue("ProxyServer")
-	return enabledOK && serverOK && strings.EqualFold(enabled.Value, "0x1") && strings.Contains(server.Value, "127.0.0.1:7890")
+	return enabledOK && serverOK && strings.EqualFold(enabled.Value, "0x1") && strings.TrimSpace(server.Value) == "127.0.0.1:7890"
 }
 
 func Set(enabled bool, backupFile string) error {
@@ -67,8 +67,16 @@ func Set(enabled bool, backupFile string) error {
 	bytes, err := os.ReadFile(backupFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// 没有备份文件时，直接确保系统代理处于关闭状态
-			_ = writeValue("ProxyEnable", "REG_DWORD", "0")
+			if !Enabled() {
+				return nil
+			}
+			if err := writeValue("ProxyEnable", "REG_DWORD", "0"); err != nil {
+				return err
+			}
+			refreshWinINet()
+			if err := launch.Command("reg.exe", "delete", internetSettings, "/v", "ProxyServer", "/f").Run(); err != nil {
+				return fmt.Errorf("清除 ReiaClash 残留代理地址失败: %w", err)
+			}
 			refreshWinINet()
 			return nil
 		}

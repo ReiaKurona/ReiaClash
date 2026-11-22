@@ -49,7 +49,10 @@ func RunContext(ctx context.Context, dataDir string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := settings.Update(func(s *config.Settings) error { s.ActiveBinary = binary; return nil }); err != nil {
+	if _, err := settings.Update(func(s *config.Settings) error {
+		s.ActiveBinary, s.Enabled = binary, false
+		return nil
+	}); err != nil {
 		return err
 	}
 	logFile, err := os.OpenFile(filepath.Join(paths.Root, "core-service.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -62,6 +65,7 @@ func RunContext(ctx context.Context, dataDir string) error {
 	if err != nil {
 		return err
 	}
+	manager.RequireServiceChildJob()
 	token, err := mihomo.LoadServiceToken(paths.Root)
 	if err != nil {
 		return err

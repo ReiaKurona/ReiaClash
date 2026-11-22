@@ -69,11 +69,11 @@ func openControlPanel() error {
 	return launch.OpenURL(panel.BuiltinURL)
 }
 
-func watchPanel(ctx context.Context, notify func(string, string), paired bool) {
+func watchPanel(ctx context.Context, notify func(string), paired bool) {
 	for {
 		if state, err := fetchPanelStatus(); err == nil {
 			if state.Paired && !paired {
-				notify("ReiaClash", "面板已连接，点击打开。")
+				notify("面板已连接，点击打开。")
 			}
 			paired = state.Paired
 		}

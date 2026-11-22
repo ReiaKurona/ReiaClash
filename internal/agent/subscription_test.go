@@ -185,3 +185,28 @@ func TestSubscriptionMetadataSurvivesProxyPreferenceRollback(t *testing.T) {
 		t.Fatal("proxy rollback restored stale subscription")
 	}
 }
+
+func TestAutomaticSubscriptionSyncSkipsFreshSameURL(t *testing.T) {
+	app := subscriptionTestApp(t)
+	calls := 0
+	app.subscriptionFetch = func(_ context.Context, _ string) ([]byte, error) {
+		calls++
+		return []byte("updated profile"), nil
+	}
+	url := "https://subscription.example/profile"
+	if err := app.ImportSubscription(t.Context(), url); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SyncSubscription(t.Context(), url); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("same URL was downloaded %d times", calls)
+	}
+	if err := app.SyncSubscription(t.Context(), url+"/new"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatal("rotated URL was not applied")
+	}
+}

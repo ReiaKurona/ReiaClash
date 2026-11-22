@@ -220,7 +220,8 @@
   <div id="tab-settings" style="display: none; flex-direction:column; gap:14px;">
     <div class="card" style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
       <span>手動重啟內核，現有連接將短暫中斷</span>
-      <button id="restart-core-button" class="btn" onclick="restartKernel()">重啟 mihomo</button>
+      <button class="btn" onclick="switchTab('storage')">儲存與目錄</button>
+    <button id="restart-core-button" class="btn" onclick="restartKernel()">重啟 mihomo</button>
     </div>
     <div class="card">
       <h3 style="font-size:15px; margin-bottom:8px;">網絡接管偏好（總開關開啟時按此執行）</h3>
@@ -312,6 +313,9 @@
       <pre id="core-service-operation-error" hidden role="alert" style="white-space:pre-wrap; overflow-wrap:anywhere; color:var(--danger); font-size:12px; user-select:text;"></pre>
     </div>
 
+    <div class="card">
+      <label>開機時靜默啟動代理 <input id="pref-login-proxy" type="checkbox" onchange="toggleLoginProxy(this.checked)" disabled></label>
+    </div>
   </div>
 
   <!-- ================= TAB 4: 內核維護 ================= -->
@@ -331,7 +335,7 @@
       <div class="switch-row">
         <div>
           <div style="font-weight:600; font-size:14px;">開啟後台自動靜默下載</div>
-          <div style="font-size:12px; color:var(--text-muted);">巡檢到新版自動下載到 update.pack，在下次冷啟動或退出時無感替換</div>
+          <div style="font-size:12px; color:var(--text-muted);">Agent 自動暫存及校驗更新包，確認新版啟動後清理舊版本</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="pref-auto-ota" onchange="updatePrefSettings('auto_update_enabled')">
@@ -352,28 +356,45 @@
       <h3 style="font-size:15px; margin-bottom:8px;">手動在線升級</h3>
       <div style="display:flex; gap:10px;">
         <button class="btn" onclick="startManualUpgrade()">🚀 立即熱升級當前內核</button>
-        <button class="btn" style="background:#475569;" onclick="startSilentDownload()">🤫 僅靜默打包到 update.pack</button>
+        <button class="btn" style="background:#475569;" onclick="startSilentDownload()">靜默更新</button>
       </div>
     </div>
     <div class="card">
       <h3 style="font-size:15px; margin-bottom:8px;">Agent 維護</h3>
       <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">清理下載暫存和 DNS 記錄，或清空 Agent 日誌。保留配置、訂閱、密鑰和已下載內核。</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button id="clear-agent-cache" class="btn" onclick="agentMaintenance('cache', this)">清理 Agent 緩存</button>
-        <button id="clear-agent-logs" class="btn" onclick="agentMaintenance('logs', this)">清空 Agent 日誌</button>
-        <button id="open-cache-directory" class="btn" onclick="agentMaintenance('open-cache', this)">打開緩存目錄</button>
-        <button id="open-config-directory" class="btn" onclick="agentMaintenance('open-config', this)">打開配置目錄</button>
+        <label for="core-kind">內核類型</label>
+        <select id="core-kind" onchange="switchKernel(this.value)" disabled>
+          <option value="mihomo">mihomo</option>
+          <option value="meow-rs">meow-rs</option>
+        </select>
       </div>
     </div>
   </div>
 
   <!-- ================= TAB 5: 訂閱配置 ================= -->
+  <div id="tab-storage" class="card" style="display:none;flex-direction:column;gap:12px;">
+    <h3>儲存與目錄</h3>
+    <div id="directory-sizes" role="status"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="open-cache-directory" class="btn" onclick="agentMaintenance('open-cache', this)">打開緩存目錄</button>
+        <button id="open-config-directory" class="btn" onclick="agentMaintenance('open-config', this)">打開配置目錄</button>
+        <button id="clear-agent-cache" class="btn" onclick="agentMaintenance('cache', this)">清理 Agent 緩存</button>
+        <button id="clear-agent-logs" class="btn" onclick="agentMaintenance('logs', this)">清空 Agent 日誌</button>
+      <button class="btn" onclick="clearStoredSubscription()">清除訂閱</button>
+      <button class="btn" onclick="agentMaintenance('open-work', this)">打開工作目錄</button>
+      <button class="btn" onclick="loadDirectorySizes()">刷新統計</button>
+      <button class="btn" onclick="switchTab('settings')">返回設定</button>
+    </div>
+  </div>
+
   <div id="tab-sub" style="display: none; flex-direction:column; gap:14px;">
     <div class="card">
       <h3 style="font-size:15px; margin-bottom:10px;">推送訂閱鏈接 (熱重載生效，不殺進程)</h3>
       <div style="display:flex; gap:10px;">
         <input type="text" id="sub-url-input" placeholder="輸入明文或 Base64 訂閱鏈接" style="flex:1;">
         <button class="btn" onclick="pushSubUrl()">下載並熱加載</button>
+        <a class="btn" href="http://127.0.0.1:25500/subscription/source" target="_blank" rel="noopener noreferrer">查看訂閱與內核配置</a>
       </div>
     </div>
   </div>
@@ -429,6 +450,13 @@
   let lastAgentError = '';
   let lastEventId = 0;
 	let mutationPending = false;
+  let mutationEpoch = 0;
+  let agentPID = null;
+  let pairedPanelURL = null;
+  let agentFailures = 0;
+  let backendBusy = false;
+  let statusLoading = false;
+  let lastReadyBinary = null;
   let proxyState = { proxies: {}, order: [] };
   const groupViews = new Map();
   let panelPrefs = readPanelPrefs();
@@ -503,7 +531,7 @@
   async function agentFetch(url, options = {}) {
     const mutating = options.method && options.method !== 'GET' && !url.endsWith('/api/handshake');
     if (mutating && mutationPending) throw new Error('上一项操作尚未完成，请稍候');
-    if (mutating) mutationPending = true;
+    if (mutating) { mutationPending = true; mutationEpoch++; }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), mutating ? 300000 : 10000);
     try {
@@ -512,6 +540,26 @@
       clearTimeout(timer);
       if (mutating) mutationPending = false;
     }
+  }
+
+  async function loadDirectorySizes() {
+    const display = document.getElementById('directory-sizes');
+    try {
+      const data = await networkRequest('/api/agent/directory/sizes');
+      const titles = { cache: '升級緩存', work: '內核工作目錄', config: '配置目錄', logs: '客戶端日誌' };
+      display.textContent = Object.entries(titles).map(([key, label]) => {
+        const item = data.directories[key];
+        return `${label} ${formatSpeed(item.bytes).replace('/s', '')} · ${item.files} 個檔案${item.partial ? '（部分可讀）' : ''}`;
+      }).join(' ｜ ');
+    } catch (error) { display.textContent = error.message; }
+  }
+
+  async function clearStoredSubscription() {
+    if (!confirm('清除已保存的訂閱與快取配置？之後需手動匯入訂閱。')) return;
+    try {
+      await networkRequest('/api/agent/config/subscription/clear', { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      await loadDirectorySizes();
+    } catch (error) { showNotice(error.message); }
   }
 
   async function agentMaintenance(action, button) {
@@ -583,6 +631,8 @@
 
   async function connectAgentAttempt(silent) {
     try {
+      const pairing = panelHandshakePayload();
+      const panelURL = pairing.panel_url;
       let data = null;
       let connectionError = null;
       for (const candidate of AGENT_BASES) {
@@ -590,7 +640,7 @@
           const res = await agentFetch(`${candidate}/api/handshake`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(panelHandshakePayload())
+            body: JSON.stringify(pairing)
           });
           const response = await res.json();
           if (!res.ok) throw new Error(response.message || `连接失败 (${res.status})`);
@@ -608,6 +658,9 @@
       document.getElementById('connect-agent').style.display = 'none';
       mihomoController = data.mihomo_controller;
       agentConnected = true;
+      agentPID = data.agent_pid ?? null;
+      pairedPanelURL = panelURL;
+      agentFailures = 0;
 
       connectTraffic();
       connectMemory();
@@ -633,11 +686,31 @@
     scanningAgent = true;
     try {
       if (!agentConnected) { await connectAgent(true); return; }
-      const response = await agentFetch(`${AGENT_BASE}/api/handshake`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(panelHandshakePayload()) });
+      const pairing = panelHandshakePayload();
+      if (pairedPanelURL !== pairing.panel_url) {
+        const paired = await agentFetch(`${AGENT_BASE}/api/handshake`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pairing)
+        });
+        if (paired.ok) pairedPanelURL = pairing.panel_url;
+      }
+      const response = await agentFetch(`${AGENT_BASE}/api/health`);
       if (!response.ok) throw new Error('Agent 不可用');
       const data = await response.json();
-      mihomoController = data.mihomo_controller;
+      if (data.status !== 'ok') throw new Error('Agent 不可用');
+      if (agentPID && data.agent_pid !== agentPID) {
+        for (const socket of [trafficWs, memoryWs, logsWs]) socket?.close();
+        trafficWs = memoryWs = logsWs = null;
+        await connectAgent(true);
+        return;
+      }
+      agentFailures = 0;
+      backendBusy = Boolean(data.core_busy);
+      if (!backendBusy && !mutationPending && !document.hidden) {
+        await syncRealStatus();
+        await pollAgentEvents();
+      }
     } catch (_) {
+      if (++agentFailures < 3) return;
       agentConnected = false; mihomoController = null;
       for (const socket of [trafficWs,memoryWs,logsWs]) { try { socket?.close(); } catch (_) {} }
       trafficWs = memoryWs = logsWs = null;
@@ -649,12 +722,22 @@
 
   // 同步物理真實狀態
   async function syncRealStatus() {
-    if (mutationPending) return;
+    if (mutationPending || backendBusy || statusLoading) return;
+    statusLoading = true;
+    const epoch = mutationEpoch;
     try {
       const res = await agentFetch(`${AGENT_BASE}/api/agent/real-status`);
       if (!res.ok) throw new Error(`状态查询失败 (${res.status})`);
       const d = await res.json();
-      if (mutationPending) return;
+      if (mutationPending || epoch !== mutationEpoch) return;
+      const coreKind = document.getElementById('core-kind');
+      coreKind.value = d.core_kind || 'mihomo';
+      coreKind.disabled = !d.core_kind;
+      if (!d.last_error) lastAgentError = '';
+      if (d.mihomo_running && d.settings.active_binary && d.settings.active_binary !== lastReadyBinary) {
+        if (lastReadyBinary !== null) fetchCoreVersion();
+        lastReadyBinary = d.settings.active_binary;
+      }
 
       const masterBtn = document.getElementById('master-btn');
       const badge = document.getElementById('hero-status-badge');
@@ -687,7 +770,7 @@
         badge.className = 'badge';
         badge.textContent = '代理已暫停';
         realText.textContent = '直連中 (無接管)';
-        desc.textContent = `當前網絡直連 | 預設記憶: [ ${d.settings.use_system_proxy ? '系統代理 ' : ''}${d.settings.use_tun ? 'TUN' : ''} ]，點擊一鍵啟動`;
+        desc.textContent = `當前網絡直連 | 預設記憶: [ ${d.settings.use_system_proxy ? '系統代理 ' : ''}${d.settings.use_tun ? 'TUN' : !d.settings.use_system_proxy ? 'mihomo · TUN · mips' : ''} ]，點擊一鍵啟動`;
         playIcon.style.display = 'block';
         pauseIcon.style.display = 'none';
       }
@@ -701,11 +784,14 @@
       document.getElementById('pref-sys-proxy').checked = d.settings.use_system_proxy;
       document.getElementById('pref-tun').checked = d.settings.use_tun;
       document.getElementById('pref-tun-stack').value = d.settings.tun_stack;
+      document.getElementById('pref-tun-stack').disabled = d.core_kind === 'meow-rs';
 	  document.getElementById('pref-geo-low-memory').checked = d.settings.geo_low_memory !== false;
       document.getElementById('pref-allow-lan').checked = d.settings.allow_lan;
       document.getElementById('pref-auto-ota').checked = d.settings.auto_update_enabled;
       document.getElementById('pref-ota-hours').value = d.settings.update_interval_hours;
-    } catch (e) { showNotice(e.message); }
+    } catch (_) {
+      // The health poll owns reconnects and status retries.
+    } finally { statusLoading = false; }
   }
 
   async function syncAutoStart() {
@@ -714,6 +800,8 @@
       const d = await res.json();
       if (!res.ok) throw new Error(d.message || `状态查询失败 (${res.status})`);
       document.getElementById('pref-autostart').checked = d.autostart_enabled;
+      const loginProxy = document.getElementById('pref-login-proxy');
+      if (loginProxy) { loginProxy.checked = !!d.silent_proxy_on_login; loginProxy.disabled = false; }
       const coreServiceToggle = document.getElementById('pref-core-service');
       const coreServiceStatus = document.getElementById('core-service-status');
       const coreServiceDescription = document.getElementById('core-service-description');
@@ -804,6 +892,13 @@
     }
   }
 
+  async function toggleLoginProxy(enable) {
+    try {
+      await networkRequest('/api/system/autostart/proxy', { method: 'POST', body: JSON.stringify({ enable }) });
+    } catch (error) { showNotice(error.message); }
+    await syncAutoStart();
+  }
+
   async function toggleAutoStart(enable) {
     const toggle = document.getElementById('pref-autostart');
     toggle.disabled = true;
@@ -826,7 +921,7 @@
     try {
       const res = await agentFetch(`${AGENT_BASE}/api/agent/real-status`);
       const d = await res.json();
-      const target = !d.settings.enabled;
+      const target = !d.is_actually_intercepting;
       const action = await agentFetch(`${AGENT_BASE}/api/agent/master`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enable: target })
@@ -1073,19 +1168,33 @@
   function renderConnections() {
     const query = document.getElementById('connection-filter').value.toLowerCase();
     const filtered = connectionState.filter(connection => JSON.stringify(connection).toLowerCase().includes(query));
-    const rows = document.getElementById('connection-rows'); rows.replaceChildren();
+    const rows = document.getElementById('connection-rows');
     document.getElementById('connection-summary').textContent = `共 ${connectionState.length} 條，匹配 ${filtered.length} 條，顯示前 300 條`;
-    for (const connection of filtered.slice(0,300)) {
-      const row = document.createElement('tr'), meta = connection.metadata || {};
-      tableCell(row, `${meta.host || meta.destinationIP || '-'}:${meta.destinationPort || ''} ← ${meta.sourceIP || ''}:${meta.sourcePort || ''}`);
-      tableCell(row, `${meta.process || meta.processPath || '-'} / ${meta.network || ''} ${meta.type || ''}`);
-      tableCell(row, `${(connection.chains || []).join(' → ')} / ${connection.rule || ''} ${connection.rulePayload || ''}`);
-      tableCell(row, `${formatSpeed(connection.download || 0)} ↓ / ${formatSpeed(connection.upload || 0)} ↑`.replaceAll('/s',''));
-      const actions = tableCell(row, '');
-      const close = document.createElement('button'); close.className = 'btn danger'; close.textContent = '關閉'; close.onclick = () => closeConnection(connection.id); actions.appendChild(close);
-      const details = document.createElement('button'); details.className = 'btn'; details.textContent = '詳情'; details.onclick = () => { document.getElementById('connection-details').textContent = JSON.stringify(connection,null,2); }; actions.appendChild(details);
-      rows.appendChild(row);
+    const existing = new Map(Array.from(rows.children, row => [row.dataset.id, row]));
+    for (const [index, connection] of filtered.slice(0,300).entries()) {
+      const id = String(connection.id ?? index);
+      let row = existing.get(id);
+      if (!row) {
+        row = document.createElement('tr');
+        row.dataset.id = id;
+        for (let column = 0; column < 4; column++) tableCell(row, '');
+        const actions = tableCell(row, '');
+        const close = document.createElement('button'); close.className = 'btn danger'; close.textContent = '關閉'; close.onclick = () => closeConnection(connection.id); actions.appendChild(close);
+        const details = document.createElement('button'); details.className = 'btn'; details.textContent = '詳情'; actions.appendChild(details);
+      }
+      existing.delete(id);
+      const meta = connection.metadata || {};
+      const values = [
+        `${meta.sniffHost || meta.host || meta.destinationIP || '-'}:${meta.destinationPort || ''} ← ${meta.sourceIP || ''}:${meta.sourcePort || ''}`,
+        `${meta.process || meta.processPath || '-'} / ${meta.network || ''} ${meta.type || ''}`,
+        `${(connection.chains || []).join(' → ')} / ${connection.rule || ''} ${connection.rulePayload || ''}`,
+        `${formatSpeed(connection.download || 0)} ↓ / ${formatSpeed(connection.upload || 0)} ↑`.replaceAll('/s','')
+      ];
+      values.forEach((value, column) => { if (row.cells[column].textContent !== value) row.cells[column].textContent = value; });
+      row.cells[4].lastElementChild.onclick = () => { document.getElementById('connection-details').textContent = JSON.stringify(connection,null,2); };
+      if (rows.children[index] !== row) rows.insertBefore(row, rows.children[index] || null);
     }
+    for (const row of existing.values()) row.remove();
   }
   async function closeConnection(id) {
     try { await networkRequest('/api/core/connections' + (id ? '/' + encodeURIComponent(id) : ''), { method:'DELETE' }); await loadConnections(); }
@@ -1105,7 +1214,11 @@
     try {
       const data = await networkRequest('/api/core/dns/records');
       document.getElementById('dns-record-status').textContent = `${data.scope}；最多 ${data.limit} 條。${data.capture_error || ''}`;
-      const rows = document.getElementById('dns-record-rows'); rows.replaceChildren();
+      const rows = document.getElementById('dns-record-rows');
+      const snapshot = JSON.stringify(data.records || []);
+      if (rows.recordsSnapshot === snapshot) return;
+      rows.recordsSnapshot = snapshot;
+      rows.replaceChildren();
       for (const record of [...(data.records || [])].reverse()) {
         const row = document.createElement('tr'); tableCell(row,new Date(record.at).toLocaleTimeString()); tableCell(row,record.source === 'manual' ? '手動查詢' : '內核 DNS 日誌');
         tableCell(row,record.payload || `${record.name || ''} ${record.type || ''} ${record.error || JSON.stringify(record.result || {})}`); rows.appendChild(row);
@@ -1194,30 +1307,27 @@
     } catch (e) { showNotice(`检查更新失败：${e.message}`); }
   }
 
-  async function startManualUpgrade() {
+  async function updateKernel(path, payload) {
     try {
-      const res = await agentFetch(`${AGENT_BASE}/api/agent/upgrade`, {
+      const res = await agentFetch(`${AGENT_BASE}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_silent: false })
+        body: JSON.stringify(payload)
       });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.message || '内核更新失败');
-      showNotice(d.message || '已提交内核更新。', 'success');
-    } catch (e) { showNotice(`内核更新失败：${e.message}`); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || '內核操作失敗');
+      showNotice(data.message || `已啟動 ${data.kind}。`, 'success');
+      fetchCoreVersion();
+    } catch (e) { showNotice(e.message); }
+    finally { scanAgent(); }
   }
 
-  async function startSilentDownload() {
-    try {
-      const res = await agentFetch(`${AGENT_BASE}/api/agent/upgrade`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_silent: true })
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.message || '静默更新失败');
-      showNotice(d.message || '已提交静默更新。', 'success');
-    } catch (e) { showNotice(`静默更新失败：${e.message}`); }
+  function startManualUpgrade() { return updateKernel('/api/agent/upgrade', { is_silent: false }); }
+  function startSilentDownload() { return updateKernel('/api/agent/upgrade', { is_silent: true }); }
+  async function switchKernel(kind) {
+    const select = document.getElementById('core-kind');
+    select.disabled = true;
+    await updateKernel('/api/core/type', { kind });
   }
 
   async function fetchCoreVersion() {
@@ -1295,14 +1405,16 @@
   }
 
   function switchTab(t) {
-    ['dash', 'nodes', 'settings', 'ota', 'sub', 'logs', 'connections', 'dns'].forEach(tab => {
-      document.getElementById(`tab-btn-${tab}`).className = (t === tab) ? 'nav-btn active' : 'nav-btn';
+    ['dash', 'nodes', 'settings', 'ota', 'sub', 'logs', 'connections', 'dns', 'storage'].forEach(tab => {
+      const button = document.getElementById(`tab-btn-${tab}`);
+      if (button) button.className = (t === tab || (t === 'storage' && tab === 'settings')) ? 'nav-btn active' : 'nav-btn';
       document.getElementById(`tab-${tab}`).style.display = (t === tab) ? 'flex' : 'none';
     });
     if (t === 'nodes') return loadProxyGroups();
     if (t === 'ota') { fetchCoreVersion(); checkGitHubRelease(); }
     if (t === 'connections') return loadConnections();
     if (t === 'dns') return loadDNSRecords();
+    if (t === 'storage') return loadDirectorySizes();
   }
 
   async function pushSubUrl() {
@@ -1322,9 +1434,8 @@
 
   init();
   setInterval(scanAgent, 5000);
-  setInterval(() => { if (mihomoController) { syncRealStatus(); pollAgentEvents(); } }, 5000);
   setInterval(() => {
-    if (!mihomoController || document.hidden) return;
+    if (!mihomoController || document.hidden || mutationPending || backendBusy) return;
     if (document.getElementById('tab-connections').style.display === 'flex') loadConnections();
     if (document.getElementById('tab-dns').style.display === 'flex') loadDNSRecords();
   }, 2000);

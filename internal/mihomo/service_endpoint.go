@@ -26,9 +26,13 @@ func ServeServiceLifecycleWithListener(ctx context.Context, manager *Manager, to
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		running, lastError := manager.Status()
-		writeServiceJSON(w, http.StatusOK, serviceStatus{
-			Started: manager.SupervisorStarted(), Running: running, LastError: lastError,
-		})
+		status := serviceStatus{
+			Started: manager.SupervisorStarted(), Running: running, LastError: lastError, Binary: manager.RunningBinary(),
+		}
+		if r.URL.Query().Get("metrics") == "1" && running {
+			status.Binary, status.MemoryBytes = manager.RunningMetrics()
+		}
+		writeServiceJSON(w, http.StatusOK, status)
 	})
 	mux.HandleFunc("POST /start", func(w http.ResponseWriter, r *http.Request) {
 		if err := manager.settings.Reload(); err != nil {

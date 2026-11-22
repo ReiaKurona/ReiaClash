@@ -5,7 +5,9 @@ package notification
 import (
 	"fmt"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 	"os"
+	branding "reia-clash/ico"
 	"syscall"
 	"unsafe"
 )
@@ -24,6 +26,32 @@ var comctl32 = windows.NewLazySystemDLL("comctl32.dll")
 var subclass = comctl32.NewProc("SetWindowSubclass")
 var removeSubclass = comctl32.NewProc("RemoveWindowSubclass")
 var defaultSubclass = comctl32.NewProc("DefSubclassProc")
+
+// RegisterApp associates the tray with a stable shell identity before its window is created.
+func RegisterApp() error {
+	const appID = "ReiaClash.Windows"
+	id, err := windows.UTF16PtrFromString(appID)
+	if err != nil {
+		return err
+	}
+	setID := windows.NewLazySystemDLL("shell32.dll").NewProc("SetCurrentProcessExplicitAppUserModelID")
+	if result, _, _ := setID.Call(uintptr(unsafe.Pointer(id))); int32(result) < 0 {
+		return fmt.Errorf("设置 ReiaClash 通知标识失败: HRESULT 0x%08x", uint32(result))
+	}
+	iconPath, err := branding.DesktopIconPath()
+	if err != nil {
+		return err
+	}
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Classes\AppUserModelId\`+appID, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer key.Close()
+	if err := key.SetStringValue("DisplayName", branding.AppName); err != nil {
+		return err
+	}
+	return key.SetStringValue("IconUri", iconPath)
+}
 
 func New(show func(string, string), open func()) (*Notifier, error) {
 	notifier := &Notifier{show: show}

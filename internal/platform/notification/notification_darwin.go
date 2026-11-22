@@ -61,6 +61,19 @@ func New(show func(string, string), open func()) (*Notifier, error) {
 	}
 	notifier.objc = library
 	_ = notifier.setApplicationIcon()
+	if processClass, err := notifier.textCall("objc_getClass", "NSProcessInfo"); err == nil {
+		if process, err := notifier.send(processClass, "processInfo"); err == nil {
+			if name, err := notifier.textCall("sel_registerName", "stringWithUTF8String:"); err == nil {
+				strClass, _ := notifier.textCall("objc_getClass", "NSString")
+				data := append([]byte(branding.AppName), 0)
+				value, err := notifier.call("objc_msgSend", strClass, name, uintptr(unsafe.Pointer(&data[0])))
+				runtime.KeepAlive(data)
+				if err == nil && value != 0 {
+					_, _ = notifier.send(process, "setProcessName:", value)
+				}
+			}
+		}
+	}
 	base, err := notifier.textCall("objc_getClass", "NSObject")
 	if err != nil {
 		return notifier, err
@@ -157,3 +170,5 @@ func (n *Notifier) Close() {
 		n.send(n.delegate, "release")
 	}
 }
+
+func RegisterApp() error { return nil }

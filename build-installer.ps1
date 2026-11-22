@@ -68,7 +68,20 @@ $entries = @(Get-ChildItem -LiteralPath $payload.FullName -Recurse -Force)
 if ($entries | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } | Select-Object -First 1) {
     throw 'Replace payload symlinks and junctions with regular files and directories before packaging.'
 }
-$payloadBytes = [long] ($entries | Where-Object { !$_.PSIsContainer } | Measure-Object -Property Length -Sum).Sum
+$runtimePaths = @('data\cache.db', 'data\selector-cache.json', 'data\logbook', 'data\traffic')
+$payloadFiles = $entries | Where-Object {
+    if ($_.PSIsContainer) { return $false }
+    $relative = $_.FullName.Substring($payloadPrefix.Length)
+    foreach ($runtimePath in $runtimePaths) {
+        if ($relative.Equals($runtimePath, [StringComparison]::OrdinalIgnoreCase) -or
+            $relative.StartsWith($runtimePath + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+    return $true
+}
+$payloadBytes = [long] ($payloadFiles | Measure-Object -Property Length -Sum).Sum
+$archiveExclusions = @($runtimePaths | ForEach-Object { "-x!$_" })
 
 $sevenZipPath = Find-Executable -Path $SevenZip -Name '7z.exe' -Parameter 'SevenZip' -Candidates @(
     "$env:ProgramW6432\7-Zip\7z.exe",
@@ -90,7 +103,7 @@ try {
     Push-Location -LiteralPath $payload.FullName
     try {
         # Compress the entire tree in one call so files can share the solid dictionary.
-        & $sevenZipPath a -t7z -mx=9 '-m0=LZMA2:d=256m' -ms=on -mqs=on -mmt=1 -ssw -sse $archive '.\*'
+        & $sevenZipPath a -t7z -mx=9 '-m0=LZMA2:d=256m' -ms=on -mqs=on -mmt=1 -sse @archiveExclusions $archive '.\*'
         if ($LASTEXITCODE -ne 0) { throw "7-Zip compression failed ($LASTEXITCODE)." }
     } finally {
         Pop-Location

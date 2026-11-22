@@ -8,21 +8,26 @@ import (
 
 func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		URL string `json:"url"`
+		URL      string `json:"url"`
+		SyncOnly bool   `json:"sync_only"`
 	}
 	if err := decodeBody(r, &request); err != nil || strings.TrimSpace(request.URL) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "订阅 URL 不能为空")
 		return
 	}
-	if err := s.app.ImportSubscription(r.Context(), request.URL); err != nil {
+	apply := s.app.ImportSubscription
+	if request.SyncOnly {
+		apply = s.app.SyncSubscription
+	}
+	if err := apply(r.Context(), request.URL); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "订阅已校验并载入 mihomo"})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "订阅已同步"})
 }
 
 func (s *Server) restartCore(w http.ResponseWriter, r *http.Request) {
-	if err := s.app.Core.Restart(); err != nil {
+	if err := s.app.RestartCore(); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -80,11 +85,29 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
-	message := "mihomo 已下载并校验"
+	message := "内核已校验并启动"
 	if request.Silent {
-		message += "；将在内核下次重启时切换"
-	} else {
-		message += "，正在重启内核"
+		message = "当前内核已是最新版本"
+		if info.Pending {
+			message = "更新包已校验，暂停代理或下次启动、重启内核时自动应用"
+		}
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"success": true, "message": message, "tag": info.Tag})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": message, "tag": info.Tag, "pending": info.Pending})
+}
+
+func (s *Server) coreType(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var request struct {
+			Kind string `json:"kind"`
+		}
+		if err := decodeBody(r, &request); err != nil || (request.Kind != "mihomo" && request.Kind != "meow-rs") {
+			writeError(w, http.StatusBadRequest, "invalid_request", "kind 必须为 mihomo 或 meow-rs")
+			return
+		}
+		if err := s.app.SwitchCore(r.Context(), request.Kind); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "kind": s.app.CoreKind()})
 }

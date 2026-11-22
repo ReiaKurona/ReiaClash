@@ -147,6 +147,15 @@ func TestHotSettingsReachStartingController(t *testing.T) {
 	if enabled, stack := currentTun(); !enabled || stack != "mips" {
 		t.Fatalf("first enable did not hot apply TUN with mips: enabled=%t stack=%s", enabled, stack)
 	}
+	controllerMu.Lock()
+	tun.Enable = false
+	controllerMu.Unlock()
+	if err := app.SetEnabled(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, _ := currentTun(); !enabled {
+		t.Fatal("repeating enable did not restore a stopped listener with enabled preferences")
+	}
 	unsupportedStack := "gvisor"
 	if err := app.UpdateSettings(context.Background(), SettingsPatch{TunStack: &unsupportedStack}); err == nil {
 		t.Fatal("accepted an inactive TUN listener")
@@ -160,4 +169,32 @@ func TestHotSettingsReachStartingController(t *testing.T) {
 	if enabled, _ := currentTun(); enabled {
 		t.Fatal("pause did not hot disable TUN")
 	}
+	controllerMu.Lock()
+	tun.Enable = true
+	controllerMu.Unlock()
+	if err := app.SetEnabled(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, _ := currentTun(); enabled {
+		t.Fatal("repeating pause did not stop an active listener with paused preferences")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prefs.Update(func(s *config.Settings) error {
+		s.ActiveBinary = executable
+		s.UseTun, s.UseSystemProxy, s.TunStack = false, false, "gvisor"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.SetEnabled(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	settings := prefs.Snapshot()
+	if enabled, stack := currentTun(); !enabled || stack != "mips" || !settings.Enabled || !settings.UseTun || settings.UseSystemProxy {
+		t.Fatalf("empty interception config did not use the default TUN settings: enabled=%t stack=%s", enabled, stack)
+	}
+
 }

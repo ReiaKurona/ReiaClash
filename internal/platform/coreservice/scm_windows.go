@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reia-clash/internal/platform/launch"
+	"reia-clash/internal/platform/network"
 	"reia-clash/internal/platform/privilege"
 	"strings"
 	"time"
@@ -279,7 +280,10 @@ func UninstallPrivileged(dataDir, requestedUID string) error {
 			return err
 		}
 	}
-	return cleanupManagedProcesses(dataDir)
+	if err := cleanupManagedProcesses(dataDir); err != nil {
+		return err
+	}
+	return network.RestoreMeowDNS(dataDir)
 }
 
 type serviceHandler struct{ run func(context.Context) error }

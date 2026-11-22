@@ -35,7 +35,23 @@ Linux TUN 授权后出现 `bad unit file setting` 的问题已修正：WorkingDi
 
 2026-11-17 继续修正 Linux 授权后的路径权限兼容：对当前用户所有的服务程序/配置根目录去掉组与其他用户写位，兼容常见的 0775 构建产物；允许使用 root 所有且无组/其他用户写位的系统安装程序。配置目录和 token 仍须属于登录用户，应用旁 data 仍须对该用户可写；客户端会在授权前探测并返回具体路径错误，不递归修改所有者。Linux 操作日志改由用户 Agent 写入，避免 root 日志不可读。根目录测试 WebUI 的服务设置区会保留可复制的错误原文；若更新四组件并“修复服务”后仍失败，请复制该处完整文字。本轮尚未取得 Linux 现场完整错误，桌面授权和 TUN 成功仍需实机确认。
 
-测试面板的“内核维护”页新增清理 Agent 缓存、清空 Agent 日志、打开缓存目录、打开配置目录。接口均为 POST：`/api/agent/cache/clear`、`/api/agent/logs/clear`、`/api/agent/directory/open`（`{"directory":"cache"}` 或 `{"directory":"config"}`）。缓存清理只删除 updates 下载/解压暂存及 DNS 内存记录；日志只清空 Agent 两个日志文件和内存事件，保留配置、订阅、密钥、服务日志和已下载内核。详细响应见 [API](docs/api.md#agent-缓存日志和目录)。
+两个接管选项均关闭时，点击启动会使用原版 mihomo 的 TUN + mips，并按需请求系统授权。meow-rs 切换会在交接前准备配置所需的 GeoIP 数据。
+
+Aether M3 可在主题「客户端设置 → 内核维护」切换内核及检查或应用更新。主题默认 favicon 和站点 Logo 使用 ReiaClash 图标，桌面通知由托盘以 ReiaClash 发送。主题包位于 `Xboard-Theme-Aether-M3/MD3-Theme.zip`。详见 [主题接入](docs/xboard-integration.md)。
+
+meow-rs 切换会比对原有可用出站。检测失败会保留原内核和节点选择。Windows/Linux 的 meow-rs 按订阅中明确声明的通配 UDP 53 规则接管 DNS。验证范围见 [状态](docs/status.md)。
+
+内核类型和手动选中的代理组节点会记忆。重启、换内核或重载订阅后，会恢复仍存在的组与节点。
+
+内核切换使用已缓存的原始订阅，分别生成 `mihomo.yaml` 和 `meow.yaml`。meow-rs 会按订阅启用 TUN IPv6，面板出口卡单独报告 IPv6。订阅页可在本机独立标签查看原始订阅和当前内核 YAML。更新客户端时应同时更新并重启 Agent 和已安装的后台内核服务。
+
+Aether M3 的「开启时静默启动代理」会同时注册登录启动项。登录时才自动接管，网络、DNS 或内核未就绪会保持暂停，TUN 授权仍用系统对话框。设置的「外部资源管理」可以同步和定时更新 Geo 文件与远程规则集。「存储与目录」提供缓存、订阅和日志清除，应用旁 `data/` 仅统计与打开。
+
+测试面板的“内核维护”页可用 `/api/core/type` 在 mihomo 与 meow-rs 之间切换。切换时原 mihomo 继续提供下载代理，待官方发布包和配置通过校验后再交接。首次 meow-rs 启动失败会自动恢复 mihomo，也可在面板主动切回。meow-rs 使用自己的 TUN 实现，原 mihomo TUN stack 偏好仍用于切回后的 mihomo。
+
+两种内核的正式二进制放在应用目录。Windows 的 meow-rs 和 Wintun 放在应用目录下的 `meow/`。手动更新立即验证和交接，静默包保存在 `updates/update.pack`，暂停接管、启动客户端（含登录自启）或重启内核时自动应用。每种内核保留最近三份 OTA 备份。应用目录需要可以写入。主题「客户端设置 → 存储与目录」集中展示升级缓存、内核工作目录和配置目录容量。详见 [API](docs/api.md)。
+
+测试面板的“内核维护”页提供清理 Agent 缓存、清空 Agent 日志，设置的“存储与目录”集中提供容量与目录入口。接口均为 POST：`/api/agent/cache/clear`、`/api/agent/logs/clear`、`/api/agent/directory/open`（`{"directory":"cache"}` 或 `{"directory":"config"}`）。缓存清理只删除 updates 下载/解压暂存及 DNS 内存记录；日志只清空 Agent 两个日志文件和内存事件，保留配置、订阅、密钥、服务日志和已下载内核。详细响应见 [API](docs/api.md#agent-缓存日志和目录)。
 
 2026-11-16 的回归、静态检查、前端脚本/协议及隔离浏览器检查已通过。2026-11-17 的检查及构建范围见 [项目状态](docs/status.md)。完整 Go 测试仍有当前宿主路径解析/跨进程锁权限失败；不能将交叉构建视为 Linux TUN 已实测成功。
 
@@ -59,13 +75,15 @@ Linux TUN 授权后出现 `bad unit file setting` 的问题已修正：WorkingDi
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-installer.ps1
 ```
 
-脚本递归打包目录的全部文件，并可通过 `-PayloadDirectory`、`-OutputDirectory` 指定目录，通过 `-SevenZip`、`-InnoCompiler` 指定工具路径。压缩使用 7z LZMA2 最高级别、256 MiB 字典设定、固实模式和共享文件读取，安装时从安装包内解压预置 Geo 数据、规则集和离线 WebUI。
+脚本递归打包安装素材，排除 `data/` 下的日志库、流量库、缓存数据库和节点选择缓存。通过 `-PayloadDirectory`、`-OutputDirectory` 可指定目录，通过 `-SevenZip`、`-InnoCompiler` 可指定工具路径。压缩使用 7z LZMA2 最高级别 `-mx=9`、256 MiB 字典设定和固实模式。安装时解压随包提供的内核、Geo 数据、规则集和离线 WebUI。
 
 ## 运行
 
 在仓库目录执行 `go run ./cmd/reia-agent --webui test-webui.html`，然后打开 `http://127.0.0.1:25500/`。桌面托盘入口为 `go run ./cmd/reia-tray`。正式打包时把 `reia`、`reia-agent`、`reia-tray`、`reia-service`、`test-webui.html`、`data/` 和对应平台的内核放在同一安装目录：Windows 内核文件名为 `mihomo.exe`，Linux/macOS 为 `mihomo`，Unix 程序需要执行权限。普通进程与特权服务共用查找逻辑：显式下载并选择的更新优先，其次应用目录、当前工作目录，再回退旧选择/缓存。每个候选文件均检查普通文件类型、执行权限和 `mihomo -v` 输出，不再只判断文件存在。端口 9090 或 7890 被其他 Clash 客户端占用时显示冲突并等待端口释放，不会停止其他客户端。
 
 静默总入口为 `reia`（Windows 为 `reia.exe`）。Windows 执行 `./build.ps1`，Linux/macOS 执行 `sh build.sh`，会生成 `reia`、`reia-agent`、`reia-tray` 和独立服务程序 `reia-service`，打包时须一起放在安装目录；原有 agent、tray 保留控制台构建用于调试。自启优先注册静默总入口；升级后可在面板关闭再开启自启以更新旧启动项。这里的自启指当前用户登录后启动。
+
+冷启动默认暂停代理，保留内核、节点、TUN 和系统代理偏好。完全退出恢复本机网络设置。Windows meow-rs 会记录并恢复由内核改写的网卡 DNS。托盘菜单显示当前内核和进程内存。重开托盘时，已在后台运行的服务会继续运行。
 
 Geo 文件放在 **应用二进制同目录的 `data/`**，例如 `data/geoip.dat`、`data/geosite.dat`、`data/country.mmdb`。内核启动、校验和服务模式都使用此目录；设置、订阅、密钥和日志仍放在用户配置目录。目录需要对当前用户可写；即使内核升级到用户 updates 目录，也继续使用应用旁的同一份 data。文件缺失时 mihomo 仍可能按订阅配置下载，请预制匹配的文件。`go run` 使用临时二进制目录，测试预制数据及服务模式请先构建。
 

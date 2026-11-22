@@ -41,7 +41,7 @@ func Set(enabled bool, executable string) error {
 	content := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>Label</key><string>com.reiaclash.agent</string>
-<key>ProgramArguments</key><array><string>%s</string><string>--background</string></array>
+<key>ProgramArguments</key><array><string>%s</string><string>--background</string><string>--login-autostart</string></array>
 <key>RunAtLoad</key><true/></dict></plist>`, html.EscapeString(executable))
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		return fmt.Errorf("写入 LaunchAgent 失败: %w", err)

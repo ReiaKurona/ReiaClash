@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,14 @@ import (
 )
 
 func (a *App) ImportSubscription(ctx context.Context, rawURL string) error {
+	return a.importSubscription(ctx, rawURL, false)
+}
+
+func (a *App) SyncSubscription(ctx context.Context, rawURL string) error {
+	return a.importSubscription(ctx, rawURL, true)
+}
+
+func (a *App) importSubscription(ctx context.Context, rawURL string, syncOnly bool) error {
 	parsed, err := parseSubscriptionURL(rawURL)
 	if err != nil {
 		return err
@@ -27,12 +36,14 @@ func (a *App) ImportSubscription(ctx context.Context, rawURL string) error {
 		default:
 		}
 	}()
-	return a.updateSubscription(ctx, parsed.String(), true)
+	return a.updateSubscription(ctx, parsed.String(), true, syncOnly)
 }
 
 const SubscriptionRefreshInterval = 12 * time.Hour
 
 type SubscriptionStatus struct {
+	SuccessfulAttempt    uint64 `json:"successful_attempt,omitempty"`
+	AutoSyncPaused       bool   `json:"auto_sync_paused"`
 	HasURL               bool   `json:"has_url"`
 	Refreshing           bool   `json:"refreshing"`
 	LastSuccessAt        int64  `json:"last_success_at"`
@@ -46,7 +57,7 @@ func (a *App) SubscriptionStatus() SubscriptionStatus {
 	s := a.Prefs.Snapshot()
 	a.subscriptionStatusMu.Lock()
 	defer a.subscriptionStatusMu.Unlock()
-	status := SubscriptionStatus{HasURL: s.SubscriptionURL != "", Refreshing: a.subscriptionBusy, LastSuccessAt: s.SubscriptionUpdatedAt, LastAttemptAt: a.subscriptionAttempt, LastError: a.subscriptionError, RefreshIntervalHours: 12}
+	status := SubscriptionStatus{SuccessfulAttempt: a.subscriptionSuccessID, AutoSyncPaused: s.SubscriptionSyncPaused, HasURL: s.SubscriptionURL != "", Refreshing: a.subscriptionBusy, LastSuccessAt: s.SubscriptionUpdatedAt, LastAttemptAt: a.subscriptionAttempt, LastError: a.subscriptionError, RefreshIntervalHours: 12}
 	if s.SubscriptionUpdatedAt > 0 {
 		status.NextRefreshAt = s.SubscriptionUpdatedAt + int64(SubscriptionRefreshInterval/time.Second)
 	}
@@ -54,14 +65,25 @@ func (a *App) SubscriptionStatus() SubscriptionStatus {
 }
 
 func (a *App) RefreshSubscription(ctx context.Context) error {
-	return a.updateSubscription(ctx, "", false)
+	return a.updateSubscription(ctx, "", false, false)
 }
 
-func (a *App) updateSubscription(ctx context.Context, rawURL string, replace bool) (err error) {
+func (a *App) updateSubscription(ctx context.Context, rawURL string, replace, syncOnly bool) (err error) {
 	a.subscriptionMu.Lock()
 	defer a.subscriptionMu.Unlock()
 	if err = ctx.Err(); err != nil {
 		return err
+	}
+	if syncOnly {
+		saved := a.Prefs.Snapshot()
+		if saved.SubscriptionSyncPaused {
+			return nil
+		}
+		if saved.SubscriptionURL == rawURL && saved.SubscriptionUpdatedAt > 0 &&
+			time.Since(time.Unix(saved.SubscriptionUpdatedAt, 0)) < SubscriptionRefreshInterval &&
+			a.SubscriptionStatus().LastError == "" {
+			return nil
+		}
 	}
 	if replace {
 		a.serviceMu.Lock()
@@ -70,6 +92,9 @@ func (a *App) updateSubscription(ctx context.Context, rawURL string, replace boo
 				s.SubscriptionUpdatedAt = 0
 			}
 			s.SubscriptionURL = rawURL
+			if !syncOnly {
+				s.SubscriptionSyncPaused = false
+			}
 			return nil
 		})
 		a.serviceMu.Unlock()
@@ -84,6 +109,7 @@ func (a *App) updateSubscription(ctx context.Context, rawURL string, replace boo
 	a.subscriptionStatusMu.Lock()
 	a.subscriptionBusy = true
 	a.subscriptionAttempt = time.Now().Unix()
+	a.subscriptionAttemptID++
 	a.subscriptionStatusMu.Unlock()
 	defer func() {
 		a.subscriptionStatusMu.Lock()
@@ -91,6 +117,8 @@ func (a *App) updateSubscription(ctx context.Context, rawURL string, replace boo
 		a.subscriptionError = ""
 		if err != nil {
 			a.subscriptionError = "订阅刷新失败，客户端将自动重试；请检查网络、订阅有效性和内核状态"
+		} else {
+			a.subscriptionSuccessID = a.subscriptionAttemptID
 		}
 		a.subscriptionStatusMu.Unlock()
 	}()
@@ -283,4 +311,40 @@ func bytesTrimSpace(src []byte) []byte { return []byte(strings.TrimSpace(string(
 
 func bytesTrimUTF8BOM(src []byte) []byte {
 	return []byte(strings.TrimPrefix(string(src), "\uFEFF"))
+}
+
+func (a *App) ClearSubscription(ctx context.Context) error {
+	a.subscriptionMu.Lock()
+	defer a.subscriptionMu.Unlock()
+	a.serviceMu.Lock()
+	defer a.serviceMu.Unlock()
+	previous, err := os.ReadFile(a.Paths.Profile)
+	if err != nil {
+		return err
+	}
+	empty := []byte("proxies: []\nproxy-groups: []\nrules:\n  - MATCH,DIRECT\n")
+	apply := a.Core.ImportProfile
+	if a.Core.BinaryPath() == "" {
+		apply = func(_ context.Context, profile []byte) error { return a.Core.PersistProfile(profile) }
+	}
+	if err := apply(ctx, empty); err != nil {
+		return err
+	}
+	if _, err := a.Prefs.Update(func(s *config.Settings) error {
+		s.SubscriptionURL = ""
+		s.SubscriptionUpdatedAt = 0
+		s.SubscriptionSyncPaused = true
+		return nil
+	}); err != nil {
+		return errors.Join(err, apply(context.WithoutCancel(ctx), previous))
+	}
+	a.subscriptionStatusMu.Lock()
+	a.subscriptionAttempt, a.subscriptionError = 0, ""
+	a.subscriptionSuccessID = 0
+	a.subscriptionStatusMu.Unlock()
+	select {
+	case a.subscriptionWake <- struct{}{}:
+	default:
+	}
+	return nil
 }

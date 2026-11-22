@@ -12,33 +12,43 @@ import (
 
 // Settings 是面板管理的持久化偏好。实际是否接管流量还要结合核心和系统状态判断。
 type Settings struct {
-	Enabled               bool   `json:"enabled"`
-	UseSystemProxy        bool   `json:"use_system_proxy"`
-	UseTun                bool   `json:"use_tun"`
-	TunAuthorized         bool   `json:"-"`
-	TunStack              string `json:"tun_stack"`
-	TunDevice             string `json:"tun_device"`
-	AllowLAN              bool   `json:"allow_lan"`
-	GeoLowMemory          bool   `json:"geo_low_memory"`
-	AutoStart             bool   `json:"autostart_enabled"`
-	AutoUpdateEnabled     bool   `json:"auto_update_enabled"`
-	UpdateIntervalHours   int    `json:"update_interval_hours"`
-	OutboundMode          string `json:"outbound_mode"`
-	SubscriptionURL       string `json:"subscription_url,omitempty"`
-	SubscriptionUpdatedAt int64  `json:"subscription_updated_at,omitempty"`
-	ActiveBinary          string `json:"active_binary,omitempty"`
-	PreviousBinary        string `json:"previous_binary,omitempty"`
+	Enabled                bool   `json:"enabled"`
+	UseSystemProxy         bool   `json:"use_system_proxy"`
+	UseTun                 bool   `json:"use_tun"`
+	TunAuthorized          bool   `json:"-"`
+	TunStack               string `json:"tun_stack"`
+	TunDevice              string `json:"tun_device"`
+	AllowLAN               bool   `json:"allow_lan"`
+	GeoLowMemory           bool   `json:"geo_low_memory"`
+	SilentProxyOnLogin     bool   `json:"silent_proxy_on_login"`
+	ResourceLastUpdated    int64  `json:"resource_last_updated,omitempty"`
+	SubscriptionSyncPaused bool   `json:"subscription_sync_paused,omitempty"`
+	ResourceAutoUpdate     bool   `json:"resource_auto_update"`
+	ResourceIntervalHours  int    `json:"resource_interval_hours"`
+	ResourceKinds          string `json:"resource_kinds,omitempty"`
+	AutoStart              bool   `json:"autostart_enabled"`
+	AutoUpdateEnabled      bool   `json:"auto_update_enabled"`
+	UpdateIntervalHours    int    `json:"update_interval_hours"`
+	OutboundMode           string `json:"outbound_mode"`
+	SubscriptionURL        string `json:"subscription_url,omitempty"`
+	SubscriptionUpdatedAt  int64  `json:"subscription_updated_at,omitempty"`
+	ActiveBinary           string `json:"active_binary,omitempty"`
+	MihomoFallback         string `json:"mihomo_fallback,omitempty"`
+	PreviousBinary         string `json:"previous_binary,omitempty"`
+	MihomoRelease          string `json:"mihomo_release,omitempty"`
+	MeowRelease            string `json:"meow_release,omitempty"`
 }
 
 func Defaults() Settings {
 	return Settings{
-		Enabled:             false, // 首页总开关默认关闭；首次启动绝不默认开启系统代理或接管流量
-		UseTun:              true,
-		TunStack:            "mips",
-		TunDevice:           defaultTunDevice(),
-		GeoLowMemory:        true,
-		UpdateIntervalHours: 24,
-		OutboundMode:        "rule",
+		Enabled:               false, // 首页总开关默认关闭；首次启动绝不默认开启系统代理或接管流量
+		UseTun:                true,
+		TunStack:              "mips",
+		TunDevice:             defaultTunDevice(),
+		GeoLowMemory:          true,
+		UpdateIntervalHours:   24,
+		ResourceIntervalHours: 24,
+		OutboundMode:          "rule",
 	}
 }
 
@@ -97,6 +107,9 @@ func (s *Store) applyDefaults() {
 	}
 	if !ValidTunDevice(s.data.TunDevice) {
 		s.data.TunDevice = ""
+	}
+	if s.data.ResourceIntervalHours < 1 || s.data.ResourceIntervalHours > 168 {
+		s.data.ResourceIntervalHours = defaults.ResourceIntervalHours
 	}
 	if s.data.UpdateIntervalHours < 1 || s.data.UpdateIntervalHours > 168 {
 		s.data.UpdateIntervalHours = defaults.UpdateIntervalHours

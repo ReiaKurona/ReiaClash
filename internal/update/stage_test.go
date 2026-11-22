@@ -75,4 +75,28 @@ func TestStageVersionedReleaseBinary(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(manager.directory, "package")); !os.IsNotExist(err) {
 		t.Fatal("package service files were installed")
 	}
+	if _, err := manager.Queue(t.Context(), manager); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.ClearCache(); err != nil {
+		t.Fatal(err)
+	}
+	pending, meow, err := manager.Pending()
+	if err != nil || meow || pending.Tag != "test-release" {
+		t.Fatalf("invalid pending release: %+v %t %v", pending, meow, err)
+	}
+	_, staged, err := manager.UnpackPending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staged != path {
+		t.Fatalf("unexpected staged file: %s", staged)
+	}
+	if err := manager.DiscardPending(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := manager.Pending(); !os.IsNotExist(err) {
+		t.Fatalf("unexpected pending file: %v", err)
+	}
+
 }

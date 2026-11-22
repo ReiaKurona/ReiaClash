@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"reia-clash/internal/agent"
+	"reia-clash/internal/kernelbinary"
 	"reia-clash/internal/mihomo"
 	"reia-clash/internal/platform/autostart"
 	"reia-clash/internal/platform/coreservice"
@@ -62,6 +63,7 @@ func (s *Server) handshake(w http.ResponseWriter, r *http.Request) {
 	s.app.PairPanel(panelURL)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent_version": version.Agent,
+		"agent_pid":     os.Getpid(),
 		"panel":         s.app.PanelState(),
 		"mihomo_controller": map[string]string{
 			"api_base": s.app.Core.APIBase(),
@@ -72,7 +74,18 @@ func (s *Server) handshake(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) realStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.app.RealStatus(r.Context()))
+	status := s.app.RealStatus(r.Context())
+	if r.URL.Query().Get("metrics") == "1" && status.MihomoRunning {
+		binary, memory := s.app.Core.RunningMetrics()
+		if binary != "" {
+			status.CoreKind = "mihomo"
+			if kernelbinary.IsMeow(binary) {
+				status.CoreKind = "meow-rs"
+			}
+		}
+		status.CoreMemoryBytes = memory
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) outboundIP(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +112,7 @@ func (s *Server) systemStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"core_service_registration": registration,
 		"autostart_enabled":         autostart.Enabled(""),
+		"silent_proxy_on_login":     s.app.Prefs.Snapshot().SilentProxyOnLogin,
 		"core_service_supported":    coreservice.Supported(),
 		"core_service_delegated":    s.app.Core.UsesExternalLifecycle(),
 		"core_service_enabled":      registration.Installed && s.app.Core.UsesExternalLifecycle(),
@@ -189,14 +203,10 @@ func (s *Server) selectProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "group 和 node 都是必填项")
 		return
 	}
-	path := "/proxies/" + url.PathEscape(request.Group)
-	_, _, err := s.app.Core.Client().Do(r.Context(), http.MethodPut, path, map[string]string{"name": request.Node})
-	if err != nil {
+	if err := s.app.SelectProxy(r.Context(), request.Group, request.Node); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	// 切换节点后强制掐断现有连接，使所有后续请求立即通过新节点
-	_ = s.app.Core.Client().CloseConnections(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
@@ -219,4 +229,19 @@ func (s *Server) groupDelay(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(data)
+}
+
+func (s *Server) setSilentProxyOnLogin(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Enable *bool `json:"enable"`
+	}
+	if err := decodeBody(r, &request); err != nil || request.Enable == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "enable 必须是布尔值")
+		return
+	}
+	if err := s.app.SetSilentProxyOnLogin(*request.Enable); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "silent_proxy_on_login": *request.Enable})
 }

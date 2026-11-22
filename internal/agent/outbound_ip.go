@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,15 +14,18 @@ import (
 )
 
 type OutboundIP struct {
-	IP          string `json:"ip"`
-	CountryCode string `json:"country_code,omitempty"`
-	Colo        string `json:"colo,omitempty"`
+	IP          string  `json:"ip"`
+	IPv6        *string `json:"ipv6,omitempty"`
+	CountryCode string  `json:"country_code,omitempty"`
+	Colo        string  `json:"colo,omitempty"`
 }
 
 const outboundTraceURL = "https://1.1.1.1/cdn-cgi/trace"
+const outboundTraceIPv6URL = "https://[2606:4700:4700::1111]/cdn-cgi/trace"
 
 func (a *App) OutboundIP(ctx context.Context) (OutboundIP, error) {
 	transport := &http.Transport{DisableKeepAlives: true}
+	defer transport.CloseIdleConnections()
 	settings := a.Prefs.Snapshot()
 	if settings.Enabled && (settings.UseSystemProxy || settings.UseTun) {
 		transport.Proxy = http.ProxyURL(&url.URL{Scheme: "http", Host: "127.0.0.1:7890"})
@@ -32,7 +36,40 @@ func (a *App) OutboundIP(ctx context.Context) (OutboundIP, error) {
 	}
 	trace, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return lookupOutboundIP(trace, client, outboundTraceURL)
+	return lookupDualStackOutboundIP(trace, client, outboundTraceURL, outboundTraceIPv6URL)
+}
+
+func lookupDualStackOutboundIP(ctx context.Context, client *http.Client, ipv4URL, ipv6URL string) (OutboundIP, error) {
+	type ipv6Result struct {
+		info OutboundIP
+		err  error
+	}
+	ipv6Ready := make(chan ipv6Result, 1)
+	go func() {
+		info, err := lookupIPv6Outbound(ctx, client, ipv6URL)
+		ipv6Ready <- ipv6Result{info, err}
+	}()
+	primary, ipv4Err := lookupOutboundIP(ctx, client, ipv4URL)
+	ipv6 := <-ipv6Ready
+	if ipv4Err != nil {
+		if ipv6.err != nil {
+			return OutboundIP{}, errors.Join(ipv4Err, ipv6.err)
+		}
+		primary = ipv6.info
+	}
+	primary.IPv6 = &ipv6.info.IP
+	return primary, nil
+}
+
+func lookupIPv6Outbound(ctx context.Context, client *http.Client, endpoint string) (OutboundIP, error) {
+	info, err := lookupOutboundIP(ctx, client, endpoint)
+	if err != nil {
+		return OutboundIP{}, err
+	}
+	if ip, _ := netip.ParseAddr(info.IP); !ip.Is6() {
+		return OutboundIP{}, fmt.Errorf("IP 查询未返回公网 IPv6 地址")
+	}
+	return info, nil
 }
 
 func lookupOutboundIP(ctx context.Context, client *http.Client, endpoint string) (OutboundIP, error) {

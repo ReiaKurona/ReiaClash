@@ -151,9 +151,11 @@ type remoteLifecycle struct {
 }
 
 type serviceStatus struct {
-	Started   bool   `json:"started"`
-	Running   bool   `json:"running"`
-	LastError string `json:"last_error,omitempty"`
+	Binary      string  `json:"binary,omitempty"`
+	MemoryBytes *uint64 `json:"memory_bytes,omitempty"`
+	Started     bool    `json:"started"`
+	Running     bool    `json:"running"`
+	LastError   string  `json:"last_error,omitempty"`
 }
 
 func (l *remoteLifecycle) Start(ctx context.Context) error {
@@ -201,22 +203,38 @@ func (l *remoteLifecycle) Start(ctx context.Context) error {
 }
 
 func (l *remoteLifecycle) Status() (bool, string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, l.endpoint+"/status", nil)
+	status, err := l.status()
 	if err != nil {
 		return false, err.Error()
 	}
+	return status.Running, status.LastError
+}
+
+func (l *remoteLifecycle) status() (serviceStatus, error) {
+	return l.getStatus("/status")
+}
+
+func (l *remoteLifecycle) statusWithMetrics() (serviceStatus, error) {
+	return l.getStatus("/status?metrics=1")
+}
+
+func (l *remoteLifecycle) getStatus(path string) (serviceStatus, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, l.endpoint+path, nil)
+	if err != nil {
+		return serviceStatus{}, err
+	}
 	response, err := l.do(request)
 	if err != nil {
-		return false, err.Error()
+		return serviceStatus{}, err
 	}
 	defer response.Body.Close()
 	var status serviceStatus
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&status); err != nil {
-		return false, err.Error()
+		return serviceStatus{}, err
 	}
-	return status.Running, status.LastError
+	return status, nil
 }
 
 // Probe checks the authenticated helper itself, even if its kernel is stopped.
@@ -244,7 +262,7 @@ func (l *remoteLifecycle) Restart() error {
 }
 
 func (l *remoteLifecycle) Shutdown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
 	defer cancel()
 	return l.post(ctx, "/stop")
 }

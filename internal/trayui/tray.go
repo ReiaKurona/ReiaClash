@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gogpu/systray"
@@ -30,10 +31,12 @@ const (
 )
 
 type trayRealStatus struct {
-	IsActuallyIntercepting bool `json:"is_actually_intercepting"`
-	RealSystemProxy        bool `json:"real_system_proxy"`
-	RealTun                bool `json:"real_tun"`
-	MihomoRunning          bool `json:"mihomo_running"`
+	CoreKind               string  `json:"core_kind"`
+	CoreMemoryBytes        *uint64 `json:"core_memory_bytes"`
+	IsActuallyIntercepting bool    `json:"is_actually_intercepting"`
+	RealSystemProxy        bool    `json:"real_system_proxy"`
+	RealTun                bool    `json:"real_tun"`
+	MihomoRunning          bool    `json:"mihomo_running"`
 	Settings               struct {
 		Enabled        bool   `json:"enabled"`
 		UseSystemProxy bool   `json:"use_system_proxy"`
@@ -51,7 +54,7 @@ type eventResponse struct {
 	} `json:"events"`
 }
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context, login ...bool) error {
 	lock, err := instance.Acquire("tray")
 	if errors.Is(err, instance.ErrAlreadyRunning) {
 		return nil
@@ -66,46 +69,59 @@ func Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	if err := notification.RegisterApp(); err != nil {
+		slog.Warn("注册通知应用标识失败", "error", err)
+	}
 	tray := systray.New()
+	var registered atomic.Pointer[notification.Notifier]
+	notify := func(message string) {
+		if notifier := registered.Load(); notifier != nil {
+			if err := notifier.Show(branding.AppName, message); err != nil {
+				slog.Warn("发送系统通知失败", "error", err)
+			}
+		}
+	}
 	openPanel := func() {
 		go func() {
 			if err := openControlPanel(); err != nil {
 				slog.Error("打开面板失败", "error", err)
-				tray.ShowNotification("ReiaClash", "无法打开面板，请稍后重试。")
+				notify("无法打开面板，请稍后重试。")
 			}
 		}()
 	}
-	tray.SetAppName("ReiaClash").OnClick(openPanel)
+	tray.SetAppName(branding.AppName).OnClick(openPanel)
 	menu := systray.NewMenu()
 
 	// 1. 打开控制面板 (WebUI)
 	menu.Add("打开控制中心", func() {
 		openPanel()
 	})
+	coreItem := menu.Add("当前运行内核 — · 内存占用 —", nil)
+	coreItem.SetDisabled(true)
 	menu.AddSeparator()
 
 	// 2. 首页总开关联动：启动/暂停代理
 	var masterItem *systray.MenuItem
 	masterItem = menu.AddCheckbox("启动代理", false, func() {
-		toggleMaster(tray, masterItem)
+		toggleMaster(notify, masterItem)
 	})
 	menu.AddSeparator()
 
 	// 3. 代理模式子菜单
 	modeMenu := systray.NewMenu()
-	rule := modeMenu.AddCheckbox("规则模式", false, func() { setMode(tray, "rule") })
-	global := modeMenu.AddCheckbox("全局模式", false, func() { setMode(tray, "global") })
-	direct := modeMenu.AddCheckbox("直连模式", false, func() { setMode(tray, "direct") })
+	rule := modeMenu.AddCheckbox("规则模式", false, func() { setMode(notify, "rule") })
+	global := modeMenu.AddCheckbox("全局模式", false, func() { setMode(notify, "global") })
+	direct := modeMenu.AddCheckbox("直连模式", false, func() { setMode(notify, "direct") })
 	menu.AddSubmenu("代理模式", modeMenu)
 	menu.AddSeparator()
 
 	// 4. 重启内核
-	menu.Add("重启 mihomo 内核", func() {
+	menu.Add("重启内核", func() {
 		if err := postJSON("/api/agent/restart", nil); err != nil {
 			slog.Error("内核重启失败", "error", err)
-			tray.ShowNotification("ReiaClash", "重启失败，请在面板查看详情。")
+			notify("重启失败，请在面板查看详情。")
 		} else {
-			tray.ShowNotification("ReiaClash", "正在重启…")
+			notify("正在重启…")
 		}
 	})
 	menu.AddSeparator()
@@ -121,7 +137,7 @@ func Run(ctx context.Context) error {
 				desktopAgentGate.cancelExit()
 				if err != nil && runCtx.Err() == nil {
 					slog.Error("退出客户端失败", "error", err)
-					tray.ShowNotification("ReiaClash 退出未完成", err.Error())
+					notify("退出未完成：" + err.Error())
 				}
 				return
 			}
@@ -134,19 +150,18 @@ func Run(ctx context.Context) error {
 	if notificationErr != nil {
 		slog.Warn("通知点击初始化失败", "error", notificationErr)
 	}
-	defer notifier.Close()
-	notify := func(title, message string) {
-		if err := notifier.Show(title, message); err != nil {
-			slog.Warn("发送系统通知失败", "error", err)
-		}
-	}
-	notify("ReiaClash", "正在启动…")
+	registered.Store(notifier)
+	defer func() {
+		registered.Store(nil)
+		notifier.Close()
+	}()
+	notify("正在启动…")
 	go func() {
 		pairedInitially := false
-		if err := ensureAgent(runCtx); err != nil {
+		if err := ensureAgent(runCtx, len(login) > 0 && login[0]); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				slog.Error("Agent 启动失败", "error", err)
-				notify("ReiaClash", "启动失败，请重新打开客户端。")
+				notify("启动失败，请重新打开客户端。")
 			}
 		} else {
 			message := "已启动，点击打开面板。"
@@ -154,12 +169,12 @@ func Run(ctx context.Context) error {
 				message = "面板已连接，点击打开。"
 				pairedInitially = true
 			}
-			notify("ReiaClash", message)
+			notify(message)
 		}
 		go watchPanel(runCtx, notify, pairedInitially)
-		go watchAgent(runCtx, tray)
-		go syncStatus(runCtx, tray, masterItem, rule, global, direct)
-		go watchEvents(runCtx, tray)
+		go watchAgent(runCtx, notify)
+		go syncStatus(runCtx, tray, coreItem, masterItem, rule, global, direct)
+		go watchEvents(runCtx, notify)
 	}()
 
 	go func() {
@@ -175,8 +190,12 @@ func Run(ctx context.Context) error {
 }
 
 func fetchRealStatus() (*trayRealStatus, error) {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(apiBase + "/api/agent/real-status")
+	return fetchStatus("/api/agent/real-status")
+}
+
+func fetchStatus(path string) (*trayRealStatus, error) {
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Get(apiBase + path)
 	if err != nil {
 		return nil, err
 	}
@@ -191,30 +210,37 @@ func fetchRealStatus() (*trayRealStatus, error) {
 	return &status, nil
 }
 
-func toggleMaster(tray *systray.SystemTray, item *systray.MenuItem) {
+func toggleMaster(notify func(string), item *systray.MenuItem) {
 	status, err := fetchRealStatus()
-	target := true
-	if err == nil {
-		target = !status.Settings.Enabled
+	if err != nil {
+		notify("暂时无法确认代理状态，请稍后重试。")
+		return
 	}
+	target := !status.IsActuallyIntercepting
 	if err := postJSON("/api/agent/master", map[string]bool{"enable": target}); err != nil {
 		slog.Error("切换代理失败", "error", err)
-		tray.ShowNotification("ReiaClash", "切换失败，请在面板查看详情。")
+		notify("切换失败，请在面板查看详情。")
 		return
 	}
 	item.SetChecked(target)
 	if target {
 		item.SetLabel("代理运行中 (点击暂停)")
-		tray.ShowNotification("ReiaClash", "代理已开启。")
+		notify("代理已开启。")
 	} else {
 		item.SetLabel("启动代理")
-		tray.ShowNotification("ReiaClash", "代理已关闭。")
+		notify("代理已关闭。")
 	}
 }
 
-func syncStatus(ctx context.Context, tray *systray.SystemTray, masterItem, rule, global, direct *systray.MenuItem) {
+func syncStatus(ctx context.Context, tray *systray.SystemTray, coreItem, masterItem, rule, global, direct *systray.MenuItem) {
+	lastCoreLabel := ""
 	for {
-		status, err := fetchRealStatus()
+		status, err := fetchStatus("/api/agent/real-status?metrics=1")
+		coreLabel := runningCoreLabel(status)
+		if coreLabel != lastCoreLabel {
+			coreItem.SetLabel(coreLabel)
+			lastCoreLabel = coreLabel
+		}
 		if err == nil {
 			masterItem.SetChecked(status.IsActuallyIntercepting)
 			if status.IsActuallyIntercepting {
@@ -253,7 +279,18 @@ func syncStatus(ctx context.Context, tray *systray.SystemTray, masterItem, rule,
 	}
 }
 
-func watchAgent(ctx context.Context, tray *systray.SystemTray) {
+func runningCoreLabel(status *trayRealStatus) string {
+	core, memory := "—", "—"
+	if status != nil && status.MihomoRunning && status.CoreKind != "" {
+		core = status.CoreKind
+		if status.CoreMemoryBytes != nil {
+			memory = fmt.Sprintf("%.1f MiB", float64(*status.CoreMemoryBytes)/(1<<20))
+		}
+	}
+	return fmt.Sprintf("当前运行内核 %s · 内存占用 %s", core, memory)
+}
+
+func watchAgent(ctx context.Context, notify func(string)) {
 	lastFailure := ""
 	for {
 		if ctx.Err() != nil {
@@ -275,12 +312,12 @@ func watchAgent(ctx context.Context, tray *systray.SystemTray) {
 				message := retryErr.Error()
 				if message != lastFailure {
 					slog.Error("客户端自动恢复失败", "error", retryErr)
-					tray.ShowNotification("ReiaClash", "连接异常，请重新启动客户端。")
+					notify("连接异常，请重新启动客户端。")
 					lastFailure = message
 				}
 			} else {
 				lastFailure = ""
-				tray.ShowNotification("ReiaClash", "客户端已恢复。")
+				notify("客户端已恢复。")
 			}
 		} else {
 			lastFailure = ""
@@ -293,7 +330,7 @@ func watchAgent(ctx context.Context, tray *systray.SystemTray) {
 	}
 }
 
-func ensureAgent(ctx context.Context) error {
+func ensureAgent(ctx context.Context, login ...bool) error {
 	if ctx.Err() != nil || desktopAgentGate.isExiting() {
 		return context.Canceled
 	}
@@ -329,7 +366,11 @@ func ensureAgent(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return launch.StartBackgroundLogged(agentPath, startupLog, "--background")
+		args := []string{"--background"}
+		if len(login) > 0 && login[0] {
+			args = append(args, "--login-autostart")
+		}
+		return launch.StartBackgroundLogged(agentPath, startupLog, args...)
 	}); err != nil {
 		return fmt.Errorf("启动 agent 失败：%w", err)
 	}
@@ -414,16 +455,16 @@ func postJSON(path string, value any) error {
 	return nil
 }
 
-func setMode(tray *systray.SystemTray, mode string) {
+func setMode(notify func(string), mode string) {
 	if err := postJSON("/api/agent/settings", map[string]string{"outbound_mode": mode}); err != nil {
 		slog.Error("切换代理模式失败", "error", err)
-		tray.ShowNotification("ReiaClash", "切换失败，请在面板查看详情。")
+		notify("切换失败，请在面板查看详情。")
 		return
 	}
-	tray.ShowNotification("ReiaClash", "已切换到"+modeName(mode)+"模式")
+	notify("已切换到" + modeName(mode) + "模式")
 }
 
-func watchEvents(ctx context.Context, tray *systray.SystemTray) {
+func watchEvents(ctx context.Context, notify func(string)) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastID uint64
 	initialized := false
@@ -445,7 +486,7 @@ func watchEvents(ctx context.Context, tray *systray.SystemTray) {
 						if event.Level == "error" {
 							slog.Error("客户端事件", "message", event.Message)
 							if time.Since(lastErrorNotice) > 30*time.Second {
-								tray.ShowNotification("ReiaClash", "运行异常，请打开面板查看。")
+								notify("运行异常，请打开面板查看。")
 								lastErrorNotice = time.Now()
 							}
 						}

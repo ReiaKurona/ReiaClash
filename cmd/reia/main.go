@@ -9,6 +9,7 @@ import (
 	branding "reia-clash/ico"
 	"reia-clash/internal/platform/launch"
 	"runtime"
+	"slices"
 )
 
 func main() {
@@ -37,5 +38,12 @@ func run() error {
 		suffix = ".exe"
 	}
 	// The tray owns an atomic OS lock. Process-name scans cannot prevent races.
-	return launch.StartBackground(filepath.Join(filepath.Dir(executable), "reia-tray"+suffix), "--background")
+	var args []string
+	if slices.Contains(os.Args[1:], "--background") {
+		args = append(args, "--background")
+	}
+	if slices.Contains(os.Args[1:], "--login-autostart") {
+		args = append(args, "--login-autostart")
+	}
+	return launch.StartBackground(filepath.Join(filepath.Dir(executable), "reia-tray"+suffix), args...)
 }

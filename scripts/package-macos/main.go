@@ -5,9 +5,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"html"
 	"os"
 	"path/filepath"
+	branding "reia-clash/ico"
 )
 
 func main() {
@@ -39,7 +39,7 @@ func main() {
 <key>CFBundleVersion</key><string>1</string>
 <key>LSUIElement</key><true/>
 </dict></plist>
-`, html.EscapeString(part.name), html.EscapeString(part.name), part.program, part.program)
+`, branding.AppName, branding.AppName, part.program, part.program)
 		check(os.WriteFile(filepath.Join(contents, "Info.plist"), []byte(plist), 0644))
 	}
 	fmt.Println("macOS application entries generated with ReiaClash icons")

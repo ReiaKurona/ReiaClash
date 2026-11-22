@@ -14,11 +14,12 @@ import (
 )
 
 func main() {
-	flag.Bool("background", false, "由系统开机启动项静默启动托盘")
+	background := flag.Bool("background", false, "由旧版系统登录启动项启动")
+	login := flag.Bool("login-autostart", false, "由系统登录启动项启动")
 	flag.Parse()
 	ctx, cancel := signals.Context()
 	defer cancel()
-	if err := trayui.Run(ctx); err != nil {
+	if err := trayui.Run(ctx, *login || *background); err != nil {
 		fmt.Fprintln(os.Stderr, "ReiaClash 托盘启动失败:", err)
 		os.Exit(1)
 	}

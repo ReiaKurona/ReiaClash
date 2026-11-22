@@ -13,29 +13,33 @@ import (
 	"sync"
 
 	"reia-clash/internal/config"
+	"reia-clash/internal/kernelbinary"
 	"reia-clash/internal/platform/instance"
 )
 
 type Manager struct {
-	operationMu   sync.Mutex
-	profileMu     sync.Mutex
-	mu            sync.RWMutex
-	dataDir       string
-	kernelDataDir string
-	configPath    string
-	binary        string
-	secret        string
-	settings      *config.Store
-	logger        *slog.Logger
-	started       bool
-	running       bool
-	lastError     string
-	lastOutput    string
-	restart       chan struct{}
-	stop          context.CancelFunc
-	done          chan struct{}
-	notify        func(string, string)
-	lifecycle     ProcessLifecycle
+	strictChildJob bool
+	operationMu    sync.Mutex
+	runningBinary  string
+	runningPID     int
+	profileMu      sync.Mutex
+	mu             sync.RWMutex
+	dataDir        string
+	kernelDataDir  string
+	configPath     string
+	binary         string
+	secret         string
+	settings       *config.Store
+	logger         *slog.Logger
+	started        bool
+	running        bool
+	lastError      string
+	lastOutput     string
+	restart        chan struct{}
+	stop           context.CancelFunc
+	done           chan struct{}
+	notify         func(string, string)
+	lifecycle      ProcessLifecycle
 }
 
 // ProcessLifecycle 把内核的启动、重启和状态查询交给本地进程监督器，
@@ -48,6 +52,15 @@ type ProcessLifecycle interface {
 }
 
 func NewManager(dataDir, configPath, binary string, settings *config.Store, logger *slog.Logger) (*Manager, error) {
+	return newManager(dataDir, configPath, binary, settings, logger, true)
+}
+
+// NewDelegatedManager leaves the first runtime configuration to the service.
+func NewDelegatedManager(dataDir, configPath, binary string, settings *config.Store, logger *slog.Logger) (*Manager, error) {
+	return newManager(dataDir, configPath, binary, settings, logger, false)
+}
+
+func newManager(dataDir, configPath, binary string, settings *config.Store, logger *slog.Logger, writeRuntime bool) (*Manager, error) {
 	kernelDataDir, err := config.MihomoDataDir()
 	if err != nil {
 		return nil, err
@@ -87,24 +100,32 @@ func NewManager(dataDir, configPath, binary string, settings *config.Store, logg
 	} else if err != nil {
 		return nil, err
 	}
-	rendered, err := BuildConfig(profile, settings.Snapshot(), secret)
-	if err != nil {
-		return nil, err
-	}
-	if err := atomicWrite(configPath, rendered); err != nil {
-		return nil, err
-	}
 	if binary != "" {
 		if _, err := os.Stat(binary); err != nil {
 			return nil, fmt.Errorf("mihomo 内核路径不可用 %q: %w", binary, err)
 		}
 	}
-	return &Manager{
+	manager := &Manager{
 		dataDir: dataDir, kernelDataDir: kernelDataDir, configPath: configPath, binary: binary,
 		secret: secret, settings: settings, logger: logger,
 		restart: make(chan struct{}, 1),
-	}, nil
+	}
+	if writeRuntime {
+		if err := manager.persistRuntimeConfig(profile, manager.BinaryPath()); err != nil {
+			return nil, err
+		}
+	}
+	return manager, nil
 }
+
+func (m *Manager) runtimePath(binary string) string {
+	if kernelbinary.IsMeow(binary) {
+		return filepath.Join(filepath.Dir(m.configPath), "meow.yaml")
+	}
+	return m.configPath
+}
+
+func (m *Manager) RequireServiceChildJob() { m.strictChildJob = true }
 
 func (m *Manager) Secret() string  { return m.secret }
 func (m *Manager) APIBase() string { return "http://127.0.0.1:9090" }
@@ -202,6 +223,70 @@ func (m *Manager) Status() (bool, string) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.running, m.lastError
+}
+
+func (m *Manager) RunningBinary() string {
+	if lifecycle := m.delegatedLifecycle(); lifecycle != nil {
+		if remote, ok := lifecycle.(*remoteLifecycle); ok {
+			status, _ := remote.status()
+			if status.Running {
+				return status.Binary
+			}
+		}
+		return ""
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.running {
+		return m.runningBinary
+	}
+	return ""
+}
+
+func (m *Manager) RunningMetrics() (string, *uint64) {
+	if lifecycle := m.delegatedLifecycle(); lifecycle != nil {
+		if remote, ok := lifecycle.(*remoteLifecycle); ok {
+			status, _ := remote.statusWithMetrics()
+			if status.Running {
+				return status.Binary, status.MemoryBytes
+			}
+		}
+		return "", nil
+	}
+	m.mu.RLock()
+	binary, pid, running := m.runningBinary, m.runningPID, m.running
+	m.mu.RUnlock()
+	if !running {
+		return "", nil
+	}
+	memory, ok := processMemory(pid)
+	if !ok {
+		return binary, nil
+	}
+	return binary, &memory
+}
+
+func (m *Manager) ValidateBinaryConfig(binary string) error {
+	m.profileMu.Lock()
+	defer m.profileMu.Unlock()
+	profile, err := os.ReadFile(filepath.Join(m.dataDir, "profile.yaml"))
+	if err != nil {
+		return err
+	}
+	rendered, err := m.renderForBinary(profile, binary)
+	if err != nil {
+		return err
+	}
+	candidate, err := os.CreateTemp(filepath.Dir(m.configPath), "kernel-check-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(candidate.Name())
+	_, writeErr := candidate.Write(rendered)
+	if err := errors.Join(writeErr, candidate.Close()); err != nil {
+		return err
+	}
+	return m.validateWith(binary, candidate.Name())
 }
 
 func (m *Manager) Restart() error {

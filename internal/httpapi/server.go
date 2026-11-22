@@ -101,8 +101,10 @@ func (s *Server) routes() http.Handler {
 		s.serveWebUI(w, r)
 	})
 	mux.HandleFunc("GET /test-webui.html", s.serveWebUI)
+	mux.HandleFunc("GET "+subscriptionSourcePath, s.subscriptionSource)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "agent_version": version.Agent, "agent_pid": os.Getpid()})
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "agent_version": version.Agent, "agent_pid": os.Getpid(), "core_busy": s.app.CoreOperationBusy()})
 	})
 	mux.HandleFunc("POST /api/handshake", s.handshake)
 	mux.HandleFunc("GET /api/agent/panel", s.panelStatus)
@@ -113,6 +115,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/agent/events", s.events)
 	mux.HandleFunc("GET /api/system/status", s.systemStatus)
 	mux.HandleFunc("POST /api/system/autostart", s.setAutoStart)
+	mux.HandleFunc("POST /api/system/autostart/proxy", s.setSilentProxyOnLogin)
 	mux.HandleFunc("POST /api/system/core-service", s.setCoreService)
 	mux.HandleFunc("POST /api/agent/master", s.setMaster)
 	mux.HandleFunc("POST /api/agent/settings", s.updateSettings)
@@ -126,6 +129,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/subscription/refresh", s.refreshSubscription)
 	mux.HandleFunc("POST /api/agent/restart", s.restartCore)
 	mux.HandleFunc("POST /api/core/restart", s.restartCore)
+	mux.HandleFunc("GET /api/core/type", s.coreType)
+	mux.HandleFunc("POST /api/core/type", s.coreType)
 	mux.HandleFunc("GET /api/core/connections", s.connections)
 	mux.HandleFunc("DELETE /api/core/connections", s.connections)
 	mux.HandleFunc("DELETE /api/core/connections/{id}", s.connections)
@@ -137,6 +142,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/agent/cache/clear", s.clearAgentCache)
 	mux.HandleFunc("POST /api/agent/logs/clear", s.clearAgentLogs)
 	mux.HandleFunc("POST /api/agent/directory/open", s.openAgentDirectory)
+	mux.HandleFunc("GET /api/agent/directory/sizes", s.agentDirectorySizes)
+	mux.HandleFunc("POST /api/agent/config/subscription/clear", s.clearSubscription)
+	mux.HandleFunc("GET /api/agent/resources", s.resources)
+	mux.HandleFunc("POST /api/agent/resources/settings", s.setResourceSchedule)
+	mux.HandleFunc("POST /api/agent/resources/sync", s.syncResources)
 	mux.HandleFunc("GET /api/agent/check-update", s.checkUpdate)
 	mux.HandleFunc("POST /api/agent/upgrade", s.upgrade)
 	return mux
@@ -146,6 +156,12 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !requestHostIsLoopback(r.Context(), r.Host) {
 			writeError(w, http.StatusForbidden, "loopback_only", "ReiaClash API 只接受指向本机 loopback 地址的请求")
+			return
+		}
+		// The full subscription may contain credentials. Its document is
+		// readable by direct local navigation, without cross-origin API access.
+		if r.URL.Path == subscriptionSourcePath {
+			next.ServeHTTP(w, r)
 			return
 		}
 

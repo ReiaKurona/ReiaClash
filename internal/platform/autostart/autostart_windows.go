@@ -20,7 +20,7 @@ func Set(enabled bool, executable string) error {
 			}
 			executable = path
 		}
-		command := `"` + strings.ReplaceAll(executable, `"`, `\"`) + `" --background`
+		command := `"` + strings.ReplaceAll(executable, `"`, `\"`) + `" --background --login-autostart`
 		return launch.Command("reg.exe", "add", runKey, "/v", "ReiaClash", "/t", "REG_SZ", "/d", command, "/f").Run()
 	}
 	if launch.Command("reg.exe", "query", runKey, "/v", "ReiaClash").Run() != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reia-clash/internal/kernelbinary"
 	"strings"
 )
 
@@ -41,7 +42,10 @@ func (m *Manager) ClearCache() (int, error) {
 	var failures error
 	for _, entry := range entries {
 		name := entry.Name()
-		if name != ".mihomo-download.tmp" && !(strings.HasPrefix(name, "mihomo-") && (strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".tmp.exe"))) {
+		download := name == ".mihomo-download.tmp" || (strings.HasPrefix(name, ".mihomo-download-") && strings.HasSuffix(name, ".tmp"))
+		pack := strings.HasPrefix(name, ".stage-") && (strings.HasSuffix(name, "-update.pack") || strings.HasSuffix(name, ".tmp"))
+		extraction := (strings.HasPrefix(name, "mihomo-") || strings.HasPrefix(name, "meow-")) && (strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".tmp.exe"))
+		if !download && !pack && !extraction {
 			continue
 		}
 		info, err := root.Lstat(name)
@@ -59,4 +63,39 @@ func (m *Manager) ClearCache() (int, error) {
 		}
 	}
 	return count, failures
+}
+
+// RemoveSuperseded removes the previous application-managed release after handoff.
+func (m *Manager) RemoveSuperseded(previous string) error {
+	if !kernelbinary.IsManagedUpdate(m.directory, previous) {
+		return nil
+	}
+	relative, err := filepath.Rel(m.directory, previous)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(m.directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	name := filepath.Base(relative)
+	parent := filepath.Dir(relative)
+	if parent == "." && !strings.HasPrefix(name, "mihomo-") && !strings.HasPrefix(name, "meow-") {
+		return nil
+	}
+	remove := func(path string) error {
+		err := root.Remove(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := remove(relative); err != nil {
+		return err
+	}
+	if parent != "." {
+		return errors.Join(remove(filepath.Join(parent, "wintun.dll")), remove(parent))
+	}
+	return nil
 }

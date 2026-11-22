@@ -69,7 +69,7 @@ func (n *Notifier) Show(title, message string) error {
 	replaceID := n.lastID
 	n.mu.Unlock()
 	icon, _ := branding.DesktopIconPath()
-	err := n.conn.Object("org.freedesktop.Notifications", "/org/freedesktop/Notifications").Call("org.freedesktop.Notifications.Notify", 0, "ReiaClash", replaceID, icon, title, message, []string{"default", "打开面板", "open", "打开面板"}, map[string]dbus.Variant{"desktop-entry": dbus.MakeVariant("reia")}, int32(-1)).Store(&id)
+	err := n.conn.Object("org.freedesktop.Notifications", "/org/freedesktop/Notifications").Call("org.freedesktop.Notifications.Notify", 0, branding.AppName, replaceID, icon, title, message, []string{"default", "打开面板", "open", "打开面板"}, map[string]dbus.Variant{"desktop-entry": dbus.MakeVariant("reia")}, int32(-1)).Store(&id)
 	if err != nil {
 		n.show(title, message)
 		return err
@@ -86,3 +86,5 @@ func (n *Notifier) Close() {
 		n.conn.Close()
 	}
 }
+
+func RegisterApp() error { return nil }
